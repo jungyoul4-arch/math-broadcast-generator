@@ -57,8 +57,8 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/node_modules/playwright ./node_modules/playwright
 COPY --from=builder /app/node_modules/playwright-core ./node_modules/playwright-core
 
-# public 폴더 복사 (있으면)
-COPY --from=builder /app/public ./public 2>/dev/null || true
+# public 폴더 복사
+COPY --from=builder /app/public ./public
 
 EXPOSE 3000
 
