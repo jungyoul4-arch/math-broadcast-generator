@@ -16,6 +16,7 @@ export interface ProblemData {
   conditionHtml?: string;
   hasDiagram?: boolean;
   diagramPngBase64?: string;  // TikZ 렌더링된 도형 PNG (base64)
+  diagramLayout?: "single" | "wide" | "multi"; // 도형 레이아웃 힌트
   choicesHtml?: string;
 }
 
@@ -31,8 +32,13 @@ export function generateProblemHtml(problem: ProblemData): string {
     ? `<span class="condition">${problem.conditionHtml}</span>`
     : '';
 
+  // 도형 레이아웃에 따른 CSS 클래스
+  const layoutClass = problem.diagramLayout === "multi" ? "diagram-multi"
+    : problem.diagramLayout === "wide" ? "diagram-wide"
+    : "diagram-single";
+
   const diagramBlock = problem.diagramPngBase64
-    ? `<div class="diagram-area">
+    ? `<div class="diagram-area ${layoutClass}">
         <img src="data:image/png;base64,${problem.diagramPngBase64}" alt="도형" class="diagram-img" />
       </div>`
     : '';
@@ -143,7 +149,15 @@ body {
 .diagram-area {
   margin: 20px auto 16px;
   text-align: center;
+}
+.diagram-single {
   max-width: 55%;
+}
+.diagram-wide {
+  max-width: 75%;
+}
+.diagram-multi {
+  max-width: 90%;
 }
 .diagram-img {
   max-width: 100%;

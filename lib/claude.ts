@@ -383,9 +383,19 @@ export async function analyzeProblemImage(
     parsed = await analyzeText(client, imageContent, userMessage);
   }
 
-  // TikZ → PNG 렌더링
+  // TikZ → PNG 렌더링 + 레이아웃 자동 판별
   let diagramPngBase64: string | undefined;
+  let diagramLayout: "single" | "wide" | "multi" = "single";
+
   if (tikzCode) {
+    // 레이아웃 자동 판별 (TikZ 코드 분석)
+    if (tikzCode.includes("minipage") || tikzCode.includes("\\hfill")) {
+      diagramLayout = "multi";  // 여러 도형 나란히 (R1, R2 등)
+    } else if (tikzCode.includes("->") && tikzCode.includes("axis") || tikzCode.match(/\\draw.*\(-?\d+,-?\d+\).*--.*\(-?\d+,-?\d+\)/)) {
+      diagramLayout = "wide";   // 좌표계/그래프
+    }
+    console.log(`도형 레이아웃: ${diagramLayout}`);
+
     try {
       console.log("TikZ 렌더링 시작:", tikzCode.slice(0, 100));
       diagramPngBase64 = await renderTikzToPng(tikzCode);
@@ -410,6 +420,7 @@ export async function analyzeProblemImage(
     conditionHtml: p.conditionHtml ? fixMathOperators(p.conditionHtml) : undefined,
     hasDiagram: !!hasDiagram,
     diagramPngBase64,
+    diagramLayout,
     choicesHtml: p.choicesHtml || undefined,
   };
 
