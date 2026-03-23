@@ -288,9 +288,12 @@ async function analyzeText(
   try {
     return JSON.parse(jsonStr);
   } catch {
+    // LaTeX 백슬래시 수리: \sin, \frac, \pi 등 2글자 이상 명령어 → \\sin 등
+    // \n, \t, \b 같은 1글자 JSON 이스케이프는 건드리지 않음
+    // 이미 이스케이프된 \\ 도 건드리지 않음
     const fixed = jsonStr.replace(
-      /("(?:[^"\\]|\\.)*")|\\(?!["\\/bfnrtu])/g,
-      (match, quoted) => (quoted ? quoted : "\\\\")
+      /\\\\|\\([a-zA-Z]{2,})/g,
+      (match, letters) => letters ? "\\\\" + letters : match
     );
     try {
       return JSON.parse(fixed);
