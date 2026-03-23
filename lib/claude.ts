@@ -279,7 +279,23 @@ export async function analyzeProblemImage(
   let jsonMatch = jsonStr.match(/```json\s*([\s\S]*?)```/);
   if (jsonMatch) jsonStr = jsonMatch[1].trim();
 
-  let parsed = JSON.parse(jsonStr);
+  // Gemini가 JSON 안에 raw 백슬래시를 넣는 경우 수리
+  // (TikZ 코드의 \begin, \frac 등이 JSON 이스케이프 안 됨)
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch {
+    // 백슬래시 수리 시도: JSON string value 안의 단일 \를 \\로
+    const fixed = jsonStr.replace(
+      /("(?:[^"\\]|\\.)*")|\\(?!["\\/bfnrtu])/g,
+      (match, quoted) => (quoted ? quoted : "\\\\")
+    );
+    try {
+      parsed = JSON.parse(fixed);
+    } catch (e2) {
+      throw new Error(`Gemini 응답 JSON 파싱 실패: ${(e2 as Error).message}\n원본: ${jsonStr.slice(0, 300)}`);
+    }
+  }
 
   // 2차: 도형이 있으면 Pro로 TikZ만 재생성 (Flash 텍스트 결과 재활용)
   if (parsed.hasDiagram) {
