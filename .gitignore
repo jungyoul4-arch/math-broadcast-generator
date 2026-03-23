@@ -8,5 +8,4 @@ output/*.png
 .DS_Store
 .env
 output/
-.env
-.DS_Store
+.claude/
