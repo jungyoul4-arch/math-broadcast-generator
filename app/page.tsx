@@ -90,12 +90,13 @@ export default function Home() {
     });
   }, []);
 
-  // 1-2. 분석 시작 버튼
+  // 1-2. 분석 시작 버튼 (3개씩 배치 처리 — API rate limit 방지)
   const handleStartAnalyze = useCallback(async () => {
     const pendingProblems = problems.filter((p) => p.status === "pending");
     if (pendingProblems.length === 0) return;
 
-    // pending → analyzing
+    const ANALYZE_BATCH = 3; // 동시 분석 수 (Gemini rate limit 고려)
+
     pendingProblems.forEach((p) => {
       updateProblem(p.id, { status: "analyzing" });
     });
@@ -104,52 +105,56 @@ export default function Home() {
 
     let completed = 0;
 
-    await Promise.all(
-      pendingProblems.map(async (prob) => {
-        try {
-          const formData = new FormData();
-          formData.append("image", prob.file);
-          formData.append("number", prob.number.toString());
-          const source = prob.source || globalSource;
-          if (source) {
-            formData.append("source", source);
-          }
-
-          const res = await fetch("/api/analyze", {
-            method: "POST",
-            body: formData,
-          });
-
-          if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.error || "분석 실패");
-          }
-
-          const data = await res.json();
-
-          updateProblem(prob.id, {
-            status: "ready",
-            subject: data.problemData.subject,
-            type: data.problemData.type,
-            points: data.problemData.points,
-            unitName: data.problemData.unitName || "",
-            bodyHtml: data.problemData.bodyHtml || "",
-            html: data.html,
-            contiHtml: data.contiHtml || undefined,
-          });
-        } catch (error: unknown) {
-          const message =
-            error instanceof Error ? error.message : "알 수 없는 오류";
-          updateProblem(prob.id, {
-            status: "error",
-            errorMessage: message,
-          });
-        } finally {
-          completed++;
-          setAnalyzeProgress(completed);
+    const analyzeSingle = async (prob: (typeof pendingProblems)[0]) => {
+      try {
+        const formData = new FormData();
+        formData.append("image", prob.file);
+        formData.append("number", prob.number.toString());
+        const source = prob.source || globalSource;
+        if (source) {
+          formData.append("source", source);
         }
-      })
-    );
+
+        const res = await fetch("/api/analyze", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || "분석 실패");
+        }
+
+        const data = await res.json();
+
+        updateProblem(prob.id, {
+          status: "ready",
+          subject: data.problemData.subject,
+          type: data.problemData.type,
+          points: data.problemData.points,
+          unitName: data.problemData.unitName || "",
+          bodyHtml: data.problemData.bodyHtml || "",
+          html: data.html,
+          contiHtml: data.contiHtml || undefined,
+        });
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : "알 수 없는 오류";
+        updateProblem(prob.id, {
+          status: "error",
+          errorMessage: message,
+        });
+      } finally {
+        completed++;
+        setAnalyzeProgress(completed);
+      }
+    };
+
+    // 배치 단위로 실행 (3개씩 동시 → 완료 후 다음 3개)
+    for (let i = 0; i < pendingProblems.length; i += ANALYZE_BATCH) {
+      const batch = pendingProblems.slice(i, i + ANALYZE_BATCH);
+      await Promise.all(batch.map(analyzeSingle));
+    }
 
     setPhase("preview");
   }, [problems, updateProblem, globalSource]);
