@@ -346,10 +346,18 @@ export async function analyzeProblemImage(
   // TikZ 도형이 있으면 PNG로 렌더링
   let diagramPngBase64: string | undefined;
   if (parsed.hasDiagram && parsed.diagramTikz) {
+    // JSON 파싱 수리로 이중 이스케이프된 백슬래시 정규화
+    // \\begin → \begin, \\frac → \frac 등
+    let tikzCode = String(parsed.diagramTikz);
+    tikzCode = tikzCode.replace(/\\\\(?=[a-zA-Z])/g, "\\");
+
     try {
-      diagramPngBase64 = await renderTikzToPng(parsed.diagramTikz);
+      console.log("TikZ 렌더링 시작:", tikzCode.slice(0, 100));
+      diagramPngBase64 = await renderTikzToPng(tikzCode);
+      console.log("TikZ 렌더링 성공");
     } catch (err) {
       console.error("TikZ 렌더링 실패:", err);
+      // 도형 렌더링 실패해도 문제 텍스트는 계속 진행
     }
   }
 
