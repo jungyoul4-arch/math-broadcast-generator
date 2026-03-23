@@ -9,8 +9,9 @@ import fs from "fs/promises";
 import os from "os";
 
 const execAsync = promisify(exec);
-const LATEX_PATH = "/Library/TeX/texbin";
-const GS_PATH = "/opt/homebrew/bin/gs";
+// 환경변수 또는 OS별 기본 경로
+const LATEX_PATH = process.env.LATEX_PATH || (process.platform === "linux" ? "/usr/bin" : "/Library/TeX/texbin");
+const GS_PATH = process.env.GS_PATH || (process.platform === "linux" ? "/usr/bin/gs" : "/opt/homebrew/bin/gs");
 
 /**
  * TikZ 코드를 투명 배경 PNG base64로 변환
