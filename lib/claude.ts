@@ -304,11 +304,13 @@ async function analyzeText(
 }
 
 /**
- * Pro로 TikZ 코드만 생성 (코드블록 응답 — JSON 이스케이프 문제 없음)
+ * TikZ 코드 생성 (코드블록 응답 — JSON 이스케이프 문제 없음)
+ * tier: "flash" (빠름, 기본) | "pro" (정확, 재생성용)
  */
 async function generateTikz(
   client: InstanceType<typeof GoogleGenerativeAI>,
-  imageContent: { inlineData: { mimeType: string; data: string } }
+  imageContent: { inlineData: { mimeType: string; data: string } },
+  tier: "flash" | "pro" = "flash"
 ): Promise<string | null> {
   const tikzRulesSection = SYSTEM_PROMPT.includes("## 도형 처리 (TikZ")
     ? SYSTEM_PROMPT.slice(
@@ -319,8 +321,9 @@ async function generateTikz(
       )
     : "";
 
+  const modelName = tier === "pro" ? "gemini-3.1-pro-preview" : "gemini-3-flash-preview";
   const model = client.getGenerativeModel({
-    model: "gemini-3.1-pro-preview",
+    model: modelName,
     systemInstruction: [
       "당신은 수학 문제의 도형을 TikZ 코드로 변환하는 전문가입니다.",
       "사용자가 수학 문제 이미지를 보내면, 도형/그래프 부분만 TikZ 코드로 생성합니다.",
@@ -350,7 +353,8 @@ export async function analyzeProblemImage(
   problemNumber?: number,
   source?: string,
   headerText?: string,
-  footerText?: string
+  footerText?: string,
+  usePro?: boolean
 ): Promise<AnalysisResult> {
   const client = getClient();
 
@@ -370,18 +374,20 @@ export async function analyzeProblemImage(
   let tikzCode: string | null = null;
 
   if (hasDiagram) {
-    // 도형 있음 → Flash(텍스트) + Pro(TikZ) 병렬 실행
+    const tikzTier = usePro ? "pro" : "flash";
+    console.log(`도형 → ${tikzTier.toUpperCase()} TikZ 생성`);
+
     const [textResult, tikzResult] = await Promise.all([
       analyzeText(client, imageContent, userMessage),
-      generateTikz(client, imageContent),
+      generateTikz(client, imageContent, tikzTier),
     ]);
     parsed = textResult;
     parsed.hasDiagram = true;
     tikzCode = tikzResult;
     if (tikzCode) {
-      console.log("Pro TikZ 생성 성공");
+      console.log(`${tikzTier.toUpperCase()} TikZ 생성 성공`);
     } else {
-      console.warn("Pro TikZ 생성 실패");
+      console.warn(`${tikzTier.toUpperCase()} TikZ 생성 실패`);
     }
   } else {
     // 도형 없음 → Flash만
@@ -434,6 +440,42 @@ export async function analyzeProblemImage(
   const html = generateProblemHtml(problemData);
 
   return { problemData, html };
+}
+
+/**
+ * Pro로 TikZ 재생성 (사용자가 "Pro로 재생성" 버튼 클릭 시)
+ */
+export async function regenerateTikzWithPro(
+  imageBase64: string,
+  mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif"
+): Promise<{ tikzCode: string | null; pngBase64: string | null; diagramLayout: "single" | "wide" | "multi" }> {
+  const client = getClient();
+  const imageContent = {
+    inlineData: { mimeType: mediaType, data: imageBase64 },
+  };
+
+  console.log("Pro TikZ 재생성 시작...");
+  const tikzCode = await generateTikz(client, imageContent, "pro");
+
+  let pngBase64: string | null = null;
+  let diagramLayout: "single" | "wide" | "multi" = "single";
+
+  if (tikzCode) {
+    if (tikzCode.includes("minipage") || tikzCode.includes("\\hfill")) {
+      diagramLayout = "multi";
+    } else if (tikzCode.includes("->") && tikzCode.includes("axis") || tikzCode.match(/\\draw.*\(-?\d+,-?\d+\).*--.*\(-?\d+,-?\d+\)/)) {
+      diagramLayout = "wide";
+    }
+
+    try {
+      pngBase64 = await renderTikzToPng(tikzCode);
+      console.log("Pro TikZ 재생성 성공");
+    } catch (err) {
+      console.error("Pro TikZ 렌더링 실패:", err);
+    }
+  }
+
+  return { tikzCode, pngBase64, diagramLayout };
 }
 
 export async function analyzeMultipleProblems(

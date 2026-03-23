@@ -268,6 +268,46 @@ export default function Home() {
     }
   }, [problems, updateProblem]);
 
+  // Pro로 도형 재생성 (전체 재분석, Pro TikZ 사용)
+  const handleRegeneratePro = useCallback(async (prob: ProblemState) => {
+    if (!prob.file) return;
+    updateProblem(prob.id, { status: "analyzing", errorMessage: undefined });
+
+    try {
+      const formData = new FormData();
+      formData.append("image", prob.file);
+      formData.append("number", prob.number.toString());
+      formData.append("usePro", "true");
+      if (prob.source || globalSource) formData.append("source", prob.source || globalSource);
+      if (prob.headerText) formData.append("headerText", prob.headerText);
+      if (prob.footerText) formData.append("footerText", prob.footerText);
+
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Pro 재생성 실패");
+      }
+
+      const data = await res.json();
+      updateProblem(prob.id, {
+        status: "ready",
+        subject: data.problemData.subject,
+        type: data.problemData.type,
+        points: data.problemData.points,
+        unitName: data.problemData.unitName || "",
+        bodyHtml: data.problemData.bodyHtml || "",
+        html: data.html,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "재생성 오류";
+      updateProblem(prob.id, { status: "ready", errorMessage: message });
+    }
+  }, [updateProblem, globalSource]);
+
   // base64 → Blob 다운로드 헬퍼 (data: URL보다 안정적)
   const downloadBase64 = useCallback((base64: string, filename: string) => {
     const byteChars = atob(base64);
@@ -537,6 +577,28 @@ export default function Home() {
                     }}
                   />
                 </div>
+              )}
+              {/* Pro 재생성 버튼 (ready 상태 + 도형 있는 문제) */}
+              {prob.status === "ready" && (
+                <button
+                  onClick={() => handleRegeneratePro(prob)}
+                  style={{
+                    position: "absolute",
+                    top: "8px",
+                    right: "8px",
+                    background: "rgba(124,77,255,0.7)",
+                    border: "1px solid rgba(124,77,255,0.5)",
+                    borderRadius: "8px",
+                    color: "#fff",
+                    padding: "4px 10px",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    backdropFilter: "blur(4px)",
+                  }}
+                >
+                  Pro 재생성
+                </button>
               )}
               {/* 삭제 버튼 (pending 상태에서만) */}
               {prob.status === "pending" && (

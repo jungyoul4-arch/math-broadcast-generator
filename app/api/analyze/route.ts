@@ -30,8 +30,9 @@ export async function POST(request: NextRequest) {
     const source = formData.get("source") as string | null;
     const headerText = formData.get("headerText") as string | null;
     const footerText = formData.get("footerText") as string | null;
+    const usePro = formData.get("usePro") === "true";
 
-    const result = await analyzeProblemImage(base64, mediaType, number, source || undefined, headerText || undefined, footerText || undefined);
+    const result = await analyzeProblemImage(base64, mediaType, number, source || undefined, headerText || undefined, footerText || undefined, usePro);
 
     return NextResponse.json({
       success: true,
