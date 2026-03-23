@@ -27,7 +27,7 @@ export function generateProblemHtml(problem: ProblemData): string {
   const stars = '★'.repeat(diff) + '☆'.repeat(5 - diff);
 
   const sourceBlock = problem.source
-    ? `<div class="source-tag">${problem.source}</div>`
+    ? `<span class="source-tag">${problem.source}</span>`
     : '';
 
   const headerBlock = problem.headerText
@@ -86,20 +86,17 @@ body {
   position: relative;
 }
 
-.source-tag {
-  position: absolute;
-  top: 12px;
-  right: 16px;
-  font-size: 13px;
-  color: rgba(255,255,255,0.5);
-  font-weight: 400;
-}
-
 .problem-header {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 16px;
+}
+.source-tag {
+  margin-left: auto;
+  font-size: 18px;
+  color: rgba(255,255,255,0.85);
+  font-weight: 600;
 }
 .problem-number {
   display: inline-flex;
@@ -209,25 +206,25 @@ body {
 }
 
 .header-banner {
-  padding: 10px 20px;
-  margin-bottom: 16px;
-  border-radius: 10px;
+  padding: 14px 24px;
+  margin-bottom: 20px;
+  border-radius: 12px;
   background: linear-gradient(135deg, rgba(249,168,37,0.12), rgba(255,143,0,0.08));
-  border: 1px solid rgba(249,168,37,0.25);
-  font-size: 15px;
-  font-weight: 600;
+  border: 1.5px solid rgba(249,168,37,0.3);
+  font-size: 20px;
+  font-weight: 700;
   color: rgba(255,213,79,0.95);
   letter-spacing: 0.3px;
 }
 
 .footer-banner {
-  padding: 10px 20px;
-  margin-top: 16px;
-  border-radius: 10px;
+  padding: 14px 24px;
+  margin-top: 20px;
+  border-radius: 12px;
   background: linear-gradient(135deg, rgba(100,181,246,0.1), rgba(66,165,245,0.06));
-  border: 1px solid rgba(100,181,246,0.2);
-  font-size: 14px;
-  font-weight: 500;
+  border: 1.5px solid rgba(100,181,246,0.25);
+  font-size: 19px;
+  font-weight: 600;
   color: rgba(144,202,249,0.9);
 }
 
@@ -239,7 +236,6 @@ body {
 </head>
 <body>
 <div class="problem-container">
-  ${sourceBlock}
   ${headerBlock}
 
   <div class="problem-header">
@@ -247,6 +243,7 @@ body {
     <span class="stars">${stars}</span>
     ${subjectTag}
     ${unitTag}
+    ${sourceBlock}
   </div>
 
   <div class="problem-box">
