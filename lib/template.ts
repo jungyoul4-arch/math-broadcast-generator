@@ -148,9 +148,13 @@ body {
 
 .condition {
   display: block;
-  margin-top: 6px;
-  font-size: 15px;
-  color: rgba(255,255,255,0.65);
+  margin-top: 12px;
+  padding: 16px 20px;
+  font-size: 17px;
+  color: rgba(255,255,255,0.85);
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 8px;
+  line-height: 2;
 }
 
 .diagram-area {

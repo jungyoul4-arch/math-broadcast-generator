@@ -48,9 +48,9 @@ const SYSTEM_PROMPT = `당신은 수학 문제 이미지를 분석하여 HTML+La
   "unitName": "수열의 극한",
   "hasDiagram": false,
   "diagramTikz": null,
-  "bodyHtml": "HTML+LaTeX 본문 (구하고자 하는 것 포함, 문제 전체)",
+  "bodyHtml": "HTML+LaTeX 본문 (구하고자 하는 것 반드시 포함!)",
   "questionHtml": null,
-  "conditionHtml": null,
+  "conditionHtml": "박스 안의 조건부 (원본에 박스가 있는 경우만, 없으면 null)",
   "choicesHtml": null
 }
 \`\`\`
@@ -219,13 +219,26 @@ hasDiagram: false, diagramTikz: null
 확률과통계: "조건부확률", "확률분포", "통계적 추정"
 기하: "이차곡선", "평면벡터의 성분과 내적", "공간도형"
 
-## 중요
+## 중요 (절대 지켜야 함!)
 - 수식 하나라도 틀리면 방송 사고입니다
 - 빈칸 상자는 반드시 answer-box로 변환
 - 수식 $...$ 안에 한글을 넣지 마세요
-- questionHtml은 반드시 null로! 구하고자 하는 것은 bodyHtml에 포함시키세요. 중복 표시 금지!
-- bodyHtml에 문제 전체(본문 + 구하고자 하는 것)를 모두 넣으세요
-- 줄바꿈 가독성: 의미 단위로 자연스럽게 줄바꿈하세요. 단어 중간에서 끊기지 않도록 <br> 태그를 적절히 사용하세요.
+
+## 구하고자 하는 것 (절대 누락 금지!)
+- bodyHtml 맨 마지막에 "~의 값은?", "~를 구하시오" 등 구하고자 하는 것을 반드시 포함!
+- 예: <br><br><span class="question-line">$p + q + h(4)$의 값은?</span>
+- questionHtml은 반드시 null! 구하고자 하는 것은 bodyHtml 끝에 넣으세요.
+- 원본에 "~의 값은?" 또는 "~를 구하시오"가 있으면 절대 빠뜨리지 마세요!
+
+## 조건 박스 (conditionHtml)
+- 원본 문제에서 박스(테두리) 안에 조건이 쓰여 있으면 → conditionHtml에 넣으세요
+- 박스가 없는 일반 조건이면 → bodyHtml에 포함
+- conditionHtml에 넣은 내용은 자동으로 박스 스타일로 렌더링됩니다
+- 예: "자연수 n에 대하여 직선 $y = ...$" 가 박스 안에 있으면 conditionHtml에 넣기
+
+## 기타
+- bodyHtml에 문제 전체(본문 + 조건 + 구하고자 하는 것)를 빠짐없이 넣으세요
+- 줄바꿈 가독성: 의미 단위로 자연스럽게 줄바꿈하세요. <br> 태그를 적절히 사용
   예시: "0 < ∠CAB < π/6인 호 AB 위의 점 C에 대하여" 를 한 줄로 유지`;
 
 /**
