@@ -75,9 +75,15 @@ const SYSTEM_PROMPT = `당신은 수학 문제 이미지를 분석하여 HTML+La
 - 삼각함수: \\sin, \\cos, \\tan (반드시 백슬래시!)
 - 시그마: \\sum_{k=1}^{n}
 - 조합: \\binom{n}{r} 또는 {}_{n}\\mathrm{C}_{r}
-- 조건부: \\begin{cases} ... \\end{cases}
+- 조건부: \\begin{cases} ... \\end{cases} (조건부 함수 필수!)
 - 정렬: \\begin{aligned} ... \\end{aligned}
 - 화살표: \\to (-> 사용 금지!)
+
+## 조건부 함수 (절대 규칙!)
+조건부 정의(f(x)={...})는 반드시 \\begin{cases} 환경을 사용하세요.
+한 줄로 나열하면 안 됩니다! 반드시 줄바꿈(\\\\)으로 구분하세요.
+예시:
+$$g(x) = \\begin{cases} \\frac{1}{2}px^2 + \\frac{1}{2}qx + 5 & (x < 0) \\\\ 5 & (x \\geq 0) \\end{cases}$$
 
 ## 수식 주의사항 (절대 지켜야 함!)
 - lim, log, sin, cos, tan 등은 반드시 \\를 붙여야 합니다!
@@ -315,6 +321,21 @@ function fixMathOperators(html: string): string {
 }
 
 /**
+ * LaTeX 환경(\begin, \end)의 이중 이스케이프 수리
+ * Gemini가 이스케이프 수준을 일관되지 않게 보내면
+ * JSON 파싱 후 \\begin{cases} (이중 백슬래시)가 남아 KaTeX 실패
+ */
+function fixDoubleEscapedEnvironments(html: string): string {
+  return html
+    // 수식 안의 이중 이스케이프 수리: \\begin{ → \begin{, \\end{ → \end{
+    .replace(/\\\\begin\{/g, "\\begin{")
+    .replace(/\\\\end\{/g, "\\end{")
+    // 삼중/사중 이스케이프도 정규화
+    .replace(/\\\\\\\\begin\{/g, "\\begin{")
+    .replace(/\\\\\\\\end\{/g, "\\end{");
+}
+
+/**
  * 수식 안의 answer-box HTML → \boxed{} 변환 (KaTeX 파싱 실패 방지)
  * $$...$$ 또는 $...$ 안에 <span class="answer-box"> 가 있으면 자동 변환
  */
@@ -519,9 +540,9 @@ export async function analyzeProblemImage(
     source: source || undefined,
     headerText: headerText || undefined,
     footerText: footerText || undefined,
-    bodyHtml: fixAnswerBoxInMath(fixMathOperators(p.bodyHtml || "")),
+    bodyHtml: fixDoubleEscapedEnvironments(fixAnswerBoxInMath(fixMathOperators(p.bodyHtml || ""))),
     questionHtml: "",
-    conditionHtml: p.conditionHtml ? fixAnswerBoxInMath(fixMathOperators(p.conditionHtml)) : undefined,
+    conditionHtml: p.conditionHtml ? fixDoubleEscapedEnvironments(fixAnswerBoxInMath(fixMathOperators(p.conditionHtml))) : undefined,
     hasDiagram: !!hasDiagram,
     diagramPngBase64,
     diagramLayout,

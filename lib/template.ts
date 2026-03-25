@@ -133,7 +133,7 @@ body {
 }
 
 .problem-box {
-  border: none;
+  border: 1.5px solid rgba(74,138,106,0.6);
   border-radius: 12px;
   padding: 24px 28px;
   margin-bottom: 16px;
