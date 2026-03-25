@@ -232,10 +232,16 @@ hasDiagram: false, diagramTikz: null
  *       JSON 이스케이프(\n, \t 등)는 1글자이므로 {2,} 패턴에 안 걸림
  */
 function escapeLatexInJson(jsonStr: string): string {
-  return jsonStr.replace(
+  // 1) 알파벳 2글자 이상 LaTeX 명령어: \times → \\times
+  let result = jsonStr.replace(
     /\\\\|\\([a-zA-Z]{2,})/g,
     (match, letters) => (letters ? "\\\\" + letters : match)
   );
+  // 2) LaTeX 특수문자 이스케이프: \{ → \\{, \} → \\}, \, → \\, 등
+  //    JSON에서 유효하지 않은 이스케이프 시퀀스 → "Bad escaped character" 에러 발생
+  //    이미 \\로 이스케이프된 것은 건드리지 않음
+  result = result.replace(/(?<!\\)\\([{},;:!>< #%&_^~|])/g, "\\\\$1");
+  return result;
 }
 
 /**
