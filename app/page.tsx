@@ -835,8 +835,8 @@ export default function Home() {
           </button>
         )}
 
-        {/* 확인 후 변환 버튼 */}
-        {phase === "preview" && readyCount > 0 && (
+        {/* 확인 후 변환 버튼 (preview 또는 done 상태에서 ready 카드가 있으면 표시) */}
+        {(phase === "preview" || phase === "done") && readyCount > 0 && (
           <button
             onClick={handleRender}
             style={{
