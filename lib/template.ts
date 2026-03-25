@@ -133,7 +133,7 @@ body {
 }
 
 .problem-box {
-  border: 1.5px solid rgba(74,138,106,0.6);
+  border: none;
   border-radius: 12px;
   padding: 24px 28px;
   margin-bottom: 16px;
@@ -195,10 +195,11 @@ body {
 }
 
 .solution-box {
-  border: 1px solid rgba(255,255,255,0.25);
+  border: none;
   border-radius: 8px;
   padding: 16px 20px;
   margin: 12px 0;
+  background: rgba(255,255,255,0.03);
 }
 
 .question-line {

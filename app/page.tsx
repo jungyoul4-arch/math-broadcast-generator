@@ -89,12 +89,17 @@ export default function Home() {
     []
   );
 
-  // 1-1. 개별 문제 삭제
+  // 1-1. 개별 문제 삭제 (모든 상태에서 가능)
   const handleRemoveProblem = useCallback((id: string) => {
     setProblems((prev) => {
       const filtered = prev.filter((p) => p.id !== id);
       // 번호 재할당
-      return filtered.map((p, i) => ({ ...p, number: i + 1 }));
+      const renumbered = filtered.map((p, i) => ({ ...p, number: i + 1 }));
+      // 남은 문제가 없으면 upload 페이즈로
+      if (renumbered.length === 0) {
+        setTimeout(() => { setPhase("upload"); setSavedIds(new Set()); }, 0);
+      }
+      return renumbered;
     });
   }, []);
 
@@ -681,14 +686,14 @@ export default function Home() {
                   재분석
                 </button>
               )}
-              {/* 삭제 버튼 (pending 상태에서만) */}
-              {prob.status === "pending" && (
+              {/* 삭제 버튼 (pending, ready, error 상태) */}
+              {(prob.status === "pending" || prob.status === "ready" || prob.status === "error") && (
                 <button
                   onClick={() => handleRemoveProblem(prob.id)}
                   style={{
                     position: "absolute",
                     top: "8px",
-                    right: "8px",
+                    right: prob.status === "ready" ? "70px" : "8px",
                     background: "rgba(239,83,80,0.8)",
                     border: "none",
                     borderRadius: "50%",
@@ -707,7 +712,7 @@ export default function Home() {
                   ×
                 </button>
               )}
-              {/* 개별 다운로드 + 저장 버튼들 */}
+              {/* 개별 다운로드 + 저장 + 삭제 버튼들 */}
               {prob.status === "done" && prob.pngBase64 && (
                 <div style={{
                   position: "absolute",
@@ -780,6 +785,25 @@ export default function Home() {
                       콘티
                     </button>
                   )}
+                  <button
+                    onClick={() => {
+                      if (confirm(`문제 ${prob.number}번을 삭제하시겠습니까?`)) {
+                        handleRemoveProblem(prob.id);
+                      }
+                    }}
+                    style={{
+                      background: "rgba(239,83,80,0.7)",
+                      border: "none",
+                      borderRadius: "8px",
+                      color: "#fff",
+                      padding: "4px 8px",
+                      fontSize: "11px",
+                      cursor: "pointer",
+                      backdropFilter: "blur(4px)",
+                    }}
+                  >
+                    삭제
+                  </button>
                 </div>
               )}
             </div>
