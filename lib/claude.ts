@@ -390,40 +390,53 @@ async function detectDiagram(
 }
 
 /**
- * Flash로 텍스트 분석 (도형 TikZ 제외)
+ * 텍스트 분석 (Flash 기본, 검증 실패 시 Pro 자동 재시도)
  */
 async function analyzeText(
   client: InstanceType<typeof GoogleGenerativeAI>,
   imageContent: { inlineData: { mimeType: string; data: string } },
-  userMessage: string
+  userMessage: string,
+  tier: "flash" | "pro" = "flash"
 ): Promise<Record<string, unknown>> {
+  const modelName = tier === "pro" ? "gemini-3.1-pro-preview" : "gemini-3-flash-preview";
   const model = client.getGenerativeModel({
-    model: "gemini-3-flash-preview",
+    model: modelName,
     systemInstruction: SYSTEM_PROMPT,
   });
   const result = await model.generateContent([imageContent, { text: userMessage }]);
   const responseText = result.response.text();
-  if (!responseText) throw new Error("Gemini Flash 응답 없음");
+  if (!responseText) throw new Error(`Gemini ${tier} 응답 없음`);
 
   let jsonStr = responseText.trim();
   const jsonMatch = jsonStr.match(/```json\s*([\s\S]*?)```/);
   if (jsonMatch) jsonStr = jsonMatch[1].trim();
 
-  // ★ 핵심 수정: JSON 파싱 전에 항상 LaTeX 백슬래시를 이스케이프
-  // \times → \\times, \theta → \\theta 등
-  // 이렇게 하지 않으면 \t(탭), \n(줄바꿈) 등 JSON 이스케이프와 충돌
   const escaped = escapeLatexInJson(jsonStr);
 
+  let parsed: Record<string, unknown>;
   try {
-    return JSON.parse(escaped);
+    parsed = JSON.parse(escaped);
   } catch {
-    // 그래도 실패하면 원본으로 한 번 더 시도
     try {
-      return JSON.parse(jsonStr);
+      parsed = JSON.parse(jsonStr);
     } catch (e2) {
-      throw new Error(`Flash JSON 파싱 실패: ${(e2 as Error).message}\n원본: ${jsonStr.slice(0, 300)}`);
+      throw new Error(`${tier} JSON 파싱 실패: ${(e2 as Error).message}\n원본: ${jsonStr.slice(0, 300)}`);
     }
   }
+
+  // ★ 검증: 조건부 함수가 있는데 \begin{cases}가 누락되면 Pro로 재시도
+  if (tier === "flash") {
+    const bodyHtml = (parsed.bodyHtml as string) || "";
+    const hasConditionPattern = /\(x\s*[<>≤≥\\leq\\geq\\le\\ge]/.test(bodyHtml);
+    const hasCasesEnv = /\\begin\{cases\}/.test(bodyHtml);
+
+    if (hasConditionPattern && !hasCasesEnv) {
+      console.log("⚠ Flash가 cases 환경 누락 — Pro로 자동 재시도");
+      return analyzeText(client, imageContent, userMessage, "pro");
+    }
+  }
+
+  return parsed;
 }
 
 /**
