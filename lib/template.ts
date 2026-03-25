@@ -184,13 +184,14 @@ body {
 
 .answer-box {
   display: inline-block;
-  border: 1.5px solid rgba(255,255,255,0.5);
+  border: none;
   border-radius: 4px;
   padding: 2px 12px;
   margin: 0 4px;
   min-width: 40px;
   text-align: center;
   font-weight: 600;
+  background: rgba(255,255,255,0.08);
 }
 
 .solution-box {

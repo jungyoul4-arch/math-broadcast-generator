@@ -109,10 +109,10 @@ TikZ 코드 시작 부분에 반드시 아래 컬러 정의를 포함하세요:
 
 도형 테두리와 색칠 영역은 반드시 다른 색이어야 합니다!
 
-1. 도형 외곽선/테두리: \\draw[mainLine, thick]  → 밝은 하늘색 (#4FC3F7)
+1. 도형 외곽선/테두리: \\draw[mainLine, line width=1.5pt]  → 밝은 하늘색 (#4FC3F7)
 2. 색칠/빗금 영역: \\fill[fillB, opacity=0.4]  → 주황색 (#FF9800) 또는 \\fill[fillC, opacity=0.4] → 초록색
-3. 보조 선: \\draw[subLine, thick] → 주황색
-4. 점/교점: \\filldraw[dotColor] (P) circle (2pt); → 빨간색
+3. 보조 선: \\draw[subLine, line width=1.5pt] → 주황색
+4. 점/교점: \\filldraw[dotColor] (P) circle (2.5pt); → 빨간색
 5. 라벨: text=labelColor → 흰색
 6. 직각 표시: \\draw[white!70]
 
@@ -124,9 +124,9 @@ TikZ 코드 시작 부분에 반드시 아래 컬러 정의를 포함하세요:
 
 #### 그래프 전용 규칙
 - 축: \\draw[white!50, ->] (x축, y축 — 반투명 흰색 화살표)
-- 함수 그래프 1: \\draw[mainLine, thick, smooth] (하늘색)
-- 함수 그래프 2: \\draw[subLine, thick, smooth] (주황색)
-- 함수 그래프 3: \\draw[accentLine, thick, smooth] (연두색)
+- 함수 그래프 1: \\draw[mainLine, line width=1.5pt, smooth] (하늘색)
+- 함수 그래프 2: \\draw[subLine, line width=1.5pt, smooth] (주황색)
+- 함수 그래프 3: \\draw[accentLine, line width=1.5pt, smooth] (연두색)
 - 점근선: \\draw[white!30, dashed] (연한 흰색 점선)
 - 격자: \\draw[white!10] (매우 연한 격자)
 - 축 라벨: \\node[white!70] (반투명 흰색)
@@ -157,9 +157,9 @@ TikZ 코드 시작 부분에 반드시 아래 컬러 정의를 포함하세요:
   \\coordinate (C) at (4,0);
   \\coordinate (D) at ($(A)!{2/3}!(C)$);
   \\coordinate (E) at ($(B)!(A)!(D)$);
-  \\draw[white, thick] (A) -- (B) -- (C) -- cycle;
-  \\draw[white, thick] (B) -- (D);
-  \\draw[white, thick] (A) -- (E);
+  \\draw[white, line width=1.5pt] (A) -- (B) -- (C) -- cycle;
+  \\draw[white, line width=1.5pt] (B) -- (D);
+  \\draw[white, line width=1.5pt] (A) -- (E);
   % 색칠은 반드시 fillB(주황) 사용! mainLine과 같은 색 금지!
   \\fill[fillB, opacity=0.4] (C) -- (E) -- (D) -- cycle;
   \\draw[white] ($(C)+(-0.35,0)$) -- ++(0,0.35) -- ++(0.35,0);
@@ -187,8 +187,14 @@ diagramTikz에 minipage를 사용하세요:
 hasDiagram: false, diagramTikz: null
 
 ## 빈칸 상자
-<span class="answer-box">①</span>
-<span class="answer-box">&nbsp;&nbsp;&nbsp;</span>
+- 수식 밖(일반 HTML): <span class="answer-box">(가)</span>
+- 수식 안($...$ 또는 $$...$$): \\boxed{\\text{(가)}} 사용! (HTML 태그 절대 금지!)
+
+절대 규칙: $...$ 또는 $$...$$ 안에 <span>, <div> 등 HTML 태그를 넣지 마세요!
+수식 안 빈칸은 반드시 \\boxed{\\text{(가)}} 형태를 사용하세요.
+예시:
+  올바름: $$\\frac{a_n}{b_{n+1}} = \\boxed{\\text{(가)}} \\times n$$
+  틀림:   $$\\frac{a_n}{b_{n+1}} = <span class="answer-box">(가)</span> \\times n$$
 
 ## 풀이 과정 큰 박스
 <div class="solution-box">풀이 내용</div>
@@ -303,6 +309,36 @@ function fixMathOperators(html: string): string {
       fixed = fixed.replace(new RegExp(`\\\\\\\\${op}`, "g"), `\\${op}`);
     }
     return fixed;
+  });
+
+  return result;
+}
+
+/**
+ * 수식 안의 answer-box HTML → \boxed{} 변환 (KaTeX 파싱 실패 방지)
+ * $$...$$ 또는 $...$ 안에 <span class="answer-box"> 가 있으면 자동 변환
+ */
+function fixAnswerBoxInMath(html: string): string {
+  // 블록 수식 $$...$$ 처리
+  let result = html.replace(/\$\$([\s\S]*?)\$\$/g, (match, content) => {
+    if (content.includes("answer-box") || content.includes("<span") || content.includes("<div")) {
+      const fixed = content
+        .replace(/<span\s+class=["']answer-box["']>(.*?)<\/span>/gi, (_: string, text: string) => `\\boxed{\\text{${text}}}`)
+        .replace(/<[^>]+>/g, ""); // 남은 HTML 태그 제거
+      return `$$${fixed}$$`;
+    }
+    return match;
+  });
+
+  // 인라인 수식 $...$ 처리 ($$는 이미 처리됨)
+  result = result.replace(/(?<!\$)\$(?!\$)((?:[^$\\]|\\.)*?)\$(?!\$)/g, (match, content) => {
+    if (content.includes("answer-box") || content.includes("<span") || content.includes("<div")) {
+      const fixed = content
+        .replace(/<span\s+class=["']answer-box["']>(.*?)<\/span>/gi, (_: string, text: string) => `\\boxed{\\text{${text}}}`)
+        .replace(/<[^>]+>/g, "");
+      return `$${fixed}$`;
+    }
+    return match;
   });
 
   return result;
@@ -483,9 +519,9 @@ export async function analyzeProblemImage(
     source: source || undefined,
     headerText: headerText || undefined,
     footerText: footerText || undefined,
-    bodyHtml: fixMathOperators(p.bodyHtml || ""),
+    bodyHtml: fixAnswerBoxInMath(fixMathOperators(p.bodyHtml || "")),
     questionHtml: "",
-    conditionHtml: p.conditionHtml ? fixMathOperators(p.conditionHtml) : undefined,
+    conditionHtml: p.conditionHtml ? fixAnswerBoxInMath(fixMathOperators(p.conditionHtml)) : undefined,
     hasDiagram: !!hasDiagram,
     diagramPngBase64,
     diagramLayout,
