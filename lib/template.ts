@@ -184,22 +184,22 @@ body {
 
 .answer-box {
   display: inline-block;
-  border: none;
+  border: 1.5px solid rgba(255,255,255,0.5);
   border-radius: 4px;
   padding: 2px 12px;
   margin: 0 4px;
   min-width: 40px;
   text-align: center;
   font-weight: 600;
-  background: rgba(255,255,255,0.08);
+  background: transparent;
 }
 
 .solution-box {
-  border: none;
+  border: 1px solid rgba(255,255,255,0.25);
   border-radius: 8px;
   padding: 16px 20px;
   margin: 12px 0;
-  background: rgba(255,255,255,0.03);
+  background: transparent;
 }
 
 .question-line {
