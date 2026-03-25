@@ -664,28 +664,7 @@ export default function Home() {
                   />
                 </div>
               )}
-              {/* 재분석 버튼 (ready 상태) */}
-              {prob.status === "ready" && (
-                <button
-                  onClick={() => handleRegeneratePro(prob)}
-                  style={{
-                    position: "absolute",
-                    top: "8px",
-                    right: "8px",
-                    background: "rgba(124,77,255,0.7)",
-                    border: "1px solid rgba(124,77,255,0.5)",
-                    borderRadius: "8px",
-                    color: "#fff",
-                    padding: "4px 10px",
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    backdropFilter: "blur(4px)",
-                  }}
-                >
-                  재분석
-                </button>
-              )}
+              {/* 재분석 버튼은 done 상태의 카드 버튼 그룹에 통합 */}
               {/* 삭제 버튼 (pending, ready, error 상태) */}
               {(prob.status === "pending" || prob.status === "ready" || prob.status === "error") && (
                 <button
@@ -785,6 +764,22 @@ export default function Home() {
                       콘티
                     </button>
                   )}
+                  <button
+                    onClick={() => handleRegeneratePro(prob)}
+                    style={{
+                      background: "rgba(124,77,255,0.7)",
+                      border: "1px solid rgba(124,77,255,0.5)",
+                      borderRadius: "8px",
+                      color: "#fff",
+                      padding: "4px 10px",
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      backdropFilter: "blur(4px)",
+                    }}
+                  >
+                    재분석
+                  </button>
                   <button
                     onClick={() => {
                       if (confirm(`문제 ${prob.number}번을 삭제하시겠습니까?`)) {
