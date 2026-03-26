@@ -79,11 +79,33 @@ const SYSTEM_PROMPT = `당신은 수학 문제 이미지를 분석하여 HTML+La
 - 정렬: \\begin{aligned} ... \\end{aligned}
 - 화살표: \\to (-> 사용 금지!)
 
-## 조건부 함수 (절대 규칙!)
-조건부 정의(f(x)={...})는 반드시 \\begin{cases} 환경을 사용하세요.
-한 줄로 나열하면 안 됩니다! 반드시 줄바꿈(\\\\)으로 구분하세요.
-예시:
+## 조건부 함수 (절대 규칙 — 이것을 어기면 방송 사고!)
+조건부 정의(f(x)={...})는 반드시 \\begin{cases}...\\end{cases} 환경을 사용하세요.
+
+### 필수 구조 (이 구조만 허용!)
+$$f(x) = \\begin{cases} 식1 & (조건1) \\\\ 식2 & (조건2) \\end{cases}$$
+
+### 절대 금지 패턴 (이렇게 쓰면 한 줄로 렌더링되어 방송 사고!)
+- ❌ f(x) = \\{ax^2-2 (x<2) 3x (x\\geq 2)\\}  ← cases 없이 한 줄 나열
+- ❌ \\begin{cases} ax^2-2 & (x<2) 3x & (x\\geq 2) \\end{cases}  ← \\\\ 줄바꿈 누락
+- ❌ \\left\\{ ... \\right\\}로 조건부 함수 표현  ← cases 사용해야 함
+
+### JSON 안에서의 이스케이프 (매우 중요!)
+JSON 문자열 안에서는 백슬래시를 이중으로 이스케이프해야 합니다:
+- \\\\begin{cases} (\\begin이 아님!)
+- \\\\\\\\  (줄바꿈 구분자 — \\\\이 아님!)
+- \\\\end{cases}
+- \\\\geq, \\\\leq, \\\\frac 등도 모두 이중 이스케이프
+
+### 정확한 JSON 예시 (반드시 이 형태로!)
+"bodyHtml": "$$f(x) = \\\\begin{cases} ax^2-2 & (x < 2) \\\\\\\\ 3x & (x \\\\geq 2) \\\\end{cases}$$"
+
+### 추가 예시
+2줄 조건부:
 $$g(x) = \\begin{cases} \\frac{1}{2}px^2 + \\frac{1}{2}qx + 5 & (x < 0) \\\\ 5 & (x \\geq 0) \\end{cases}$$
+
+3줄 조건부:
+$$h(x) = \\begin{cases} x^2 & (x < 0) \\\\ 0 & (x = 0) \\\\ \\sqrt{x} & (x > 0) \\end{cases}$$
 
 ## 수식 주의사항 (절대 지켜야 함!)
 - lim, log, sin, cos, tan 등은 반드시 \\를 붙여야 합니다!
@@ -349,6 +371,132 @@ function fixDoubleEscapedEnvironments(html: string): string {
 }
 
 /**
+ * ★ 조건부 함수(cases) 자동 수리 — 3가지 실패 모드 대응
+ *
+ * 실패 A: \begin{cases} 없이 한 줄로 나열 → cases 환경으로 변환
+ * 실패 B: \begin{cases} 있지만 \\ 줄바꿈 누락 → \\ 자동 삽입
+ * 실패 C: JSON 이스케이프에서 \\\\ → \\ 축소로 줄바꿈 소실 → 복원
+ */
+function fixCasesEnvironment(html: string): string {
+  let result = html;
+
+  // ── 실패 B+C 수리: \begin{cases}...\end{cases} 안에 \\ 누락 ──
+  result = result.replace(
+    /\\begin\{cases\}([\s\S]*?)\\end\{cases\}/g,
+    (_match, content: string) => {
+      // & 개수로 case 줄 수 판별 (각 줄마다 & 하나)
+      const ampCount = (content.match(/&/g) || []).length;
+      // \\ 줄바꿈 개수 (정상이면 ampCount - 1개)
+      const sepCount = (content.match(/\\\\/g) || []).length;
+
+      if (ampCount >= 2 && sepCount < ampCount - 1) {
+        console.log(`⚠ cases 줄바꿈 누락 감지 (& ${ampCount}개, \\\\ ${sepCount}개) → 자동 수리`);
+
+        // 실패 C 잔여물 정리: 단일 \ + 공백 제거 (JSON 이스케이프 손상 흔적)
+        let cleaned = content.replace(/(?<!\\)\\(?!\w)(?!\\)/g, "");
+
+        // 전략: &를 기준으로 분할 → "조건)" 뒤에 \\ 삽입
+        // 패턴: "expression & (condition) next_expression & (condition2)"
+        // → "expression & (condition) \\\\ next_expression & (condition2)"
+        const fixed = cleaned.replace(
+          /(&\s*\([^)]*\))\s+(?=[^&\\])/g,
+          "$1 \\\\ "
+        );
+
+        // 한번 더 시도: 조건이 괄호 없는 경우
+        // &와 & 사이에 \\ 없으면 삽입
+        const finalFixed = ensureCasesSeparators(fixed, ampCount);
+
+        return `\\begin{cases}${finalFixed}\\end{cases}`;
+      }
+
+      return `\\begin{cases}${content}\\end{cases}`;
+    }
+  );
+
+  // ── 실패 A 수리: cases 환경 없이 조건부 함수를 한 줄로 나열한 경우 ──
+  // 패턴: f(x) = \{ expr1 (cond1) expr2 (cond2) \}  또는
+  //        f(x) = \left\{ expr1 (cond1), expr2 (cond2) \right\}
+  result = result.replace(
+    /(\$\$[^$]*?)\\(?:left)?\\\{([^}]*?)\\(?:right)?\\\}([^$]*?\$\$)/g,
+    (_match, pre: string, inner: string, post: string) => {
+      // 조건 패턴: (x < 2) 또는 (x \geq 2) 등이 2개 이상 있는지
+      const condMatches = inner.match(/\([^)]*(?:[<>≤≥]|\\leq|\\geq|\\le|\\ge)[^)]*\)/g);
+      if (!condMatches || condMatches.length < 2) return _match;
+
+      console.log(`⚠ cases 환경 없는 조건부 함수 감지 → \\begin{cases} 변환`);
+
+      // 각 조건 앞에서 분할하여 cases 구조로 변환
+      let casesContent = inner.trim();
+
+      // 쉼표나 공백으로 분리된 조건들을 & 와 \\ 로 재구성
+      // "expr1 \quad (cond1) \quad expr2 \quad (cond2)" 패턴
+      const caseLines: string[] = [];
+      // 각 조건 패턴 직전에서 분할
+      const parts = casesContent.split(/(?=\s+(?=[^(]*\([^)]*(?:[<>≤≥]|\\leq|\\geq|\\le|\\ge)))/);
+
+      if (parts.length >= 2) {
+        for (const part of parts) {
+          const cleaned = part.replace(/[,;]\s*$/, "").replace(/\\quad\s*/g, " ").trim();
+          if (!cleaned) continue;
+          // "expr (condition)" → "expr & (condition)"
+          const condMatch = cleaned.match(/^(.*?)\s*(\([^)]*(?:[<>≤≥]|\\leq|\\geq|\\le|\\ge)[^)]*\))\s*$/);
+          if (condMatch) {
+            caseLines.push(`${condMatch[1].trim()} & ${condMatch[2]}`);
+          } else {
+            caseLines.push(cleaned);
+          }
+        }
+      }
+
+      if (caseLines.length >= 2) {
+        return `${pre}\\begin{cases} ${caseLines.join(" \\\\ ")} \\end{cases}${post}`;
+      }
+      return _match;
+    }
+  );
+
+  return result;
+}
+
+/**
+ * cases 내부에서 &와 & 사이에 \\ 가 없으면 삽입하는 헬퍼
+ */
+function ensureCasesSeparators(content: string, ampCount: number): string {
+  if (ampCount < 2) return content;
+
+  // &를 기준으로 분할
+  const parts = content.split("&");
+  if (parts.length < 3) return content; // 최소 2개의 & 필요 (3파트)
+
+  let result = parts[0] + "&"; // 첫 번째 expression &
+
+  for (let i = 1; i < parts.length; i++) {
+    if (i < parts.length - 1) {
+      // 중간 파트: "condition) expression" 형태
+      // \\ 가 있는지 확인
+      const part = parts[i];
+      if (!part.includes("\\\\")) {
+        // 조건의 끝(닫는 괄호) 찾기 → 그 뒤에 \\ 삽입
+        const splitPoint = part.match(/^([\s\S]*?\))\s+([\s\S]+)$/);
+        if (splitPoint) {
+          result += splitPoint[1] + " \\\\ " + splitPoint[2] + " &";
+        } else {
+          result += part + " &";
+        }
+      } else {
+        result += part + " &";
+      }
+    } else {
+      // 마지막 파트: 마지막 condition
+      result += parts[i];
+    }
+  }
+
+  return result;
+}
+
+/**
  * 수식 안의 answer-box HTML → \boxed{} 변환 (KaTeX 파싱 실패 방지)
  * $$...$$ 또는 $...$ 안에 <span class="answer-box"> 가 있으면 자동 변환
  */
@@ -459,15 +607,33 @@ async function analyzeText(
     }
   }
 
-  // ★ 검증: 조건부 함수가 있는데 \begin{cases}가 누락되면 Pro로 재시도
+  // ★ 검증: 조건부 함수 → cases 환경 + \\ 줄바꿈 필수
   if (tier === "flash") {
     const bodyHtml = (parsed.bodyHtml as string) || "";
-    const hasConditionPattern = /\(x\s*[<>≤≥\\leq\\geq\\le\\ge]/.test(bodyHtml);
+    // 조건부 함수 패턴: (x < 2), (x \geq 2), (x ≤ 0) 등이 2개 이상
+    const conditionMatches = bodyHtml.match(/\([^)]*(?:[<>≤≥]|\\leq|\\geq|\\le|\\ge)[^)]*\)/g);
+    const hasMultipleConditions = conditionMatches && conditionMatches.length >= 2;
     const hasCasesEnv = /\\begin\{cases\}/.test(bodyHtml);
 
-    if (hasConditionPattern && !hasCasesEnv) {
-      console.log("⚠ Flash가 cases 환경 누락 — Pro로 자동 재시도");
-      return analyzeText(client, imageContent, userMessage, "pro");
+    if (hasMultipleConditions) {
+      if (!hasCasesEnv) {
+        // 실패 A: cases 환경 자체가 없음
+        console.log("⚠ Flash가 cases 환경 누락 — Pro로 자동 재시도");
+        return analyzeText(client, imageContent, userMessage, "pro");
+      }
+
+      // 실패 B+C: cases 환경은 있지만 \\ 줄바꿈이 부족
+      const casesMatch = bodyHtml.match(/\\begin\{cases\}([\s\S]*?)\\end\{cases\}/);
+      if (casesMatch) {
+        const casesContent = casesMatch[1];
+        const ampCount = (casesContent.match(/&/g) || []).length;
+        const sepCount = (casesContent.match(/\\\\/g) || []).length;
+
+        if (ampCount >= 2 && sepCount < ampCount - 1) {
+          console.log(`⚠ Flash가 cases 줄바꿈 누락 (& ${ampCount}개, \\\\ ${sepCount}개) — Pro로 자동 재시도`);
+          return analyzeText(client, imageContent, userMessage, "pro");
+        }
+      }
     }
   }
 
@@ -608,9 +774,9 @@ export async function analyzeProblemImage(
     source: source || undefined,
     headerText: headerText || undefined,
     footerText: footerText || undefined,
-    bodyHtml: fixDoubleEscapedEnvironments(fixAnswerBoxInMath(fixMathOperators(p.bodyHtml || ""))),
+    bodyHtml: fixCasesEnvironment(fixDoubleEscapedEnvironments(fixAnswerBoxInMath(fixMathOperators(p.bodyHtml || "")))),
     questionHtml: "",
-    conditionHtml: p.conditionHtml ? fixDoubleEscapedEnvironments(fixAnswerBoxInMath(fixMathOperators(p.conditionHtml))) : undefined,
+    conditionHtml: p.conditionHtml ? fixCasesEnvironment(fixDoubleEscapedEnvironments(fixAnswerBoxInMath(fixMathOperators(p.conditionHtml)))) : undefined,
     hasDiagram: !!hasDiagram,
     diagramPngBase64,
     diagramLayout,
