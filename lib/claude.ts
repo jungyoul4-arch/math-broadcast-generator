@@ -392,11 +392,33 @@ async function detectDiagram(
 ): Promise<boolean> {
   const model = client.getGenerativeModel({
     model: "gemini-3-flash-preview",
-    systemInstruction: "이미지를 보고 도형, 그래프, 그림이 있는지만 판단하세요. 반드시 true 또는 false만 응답하세요.",
+    systemInstruction: [
+      "당신은 수학 문제 이미지에서 도형/그래프/그림이 **실제로 눈에 보이는지** 판단하는 전문가입니다.",
+      "",
+      "## 판단 기준",
+      "true를 반환하는 경우 (이미지에 시각적 요소가 실제로 존재):",
+      "- 좌표평면, 그래프, 함수 곡선이 그려져 있는 경우",
+      "- 삼각형, 원, 사각형 등 기하학적 도형이 그려져 있는 경우",
+      "- 벤다이어그램, 수직선, 표 등 시각적 다이어그램이 있는 경우",
+      "- 그림, 도식, 좌표점 등이 이미지에 포함된 경우",
+      "",
+      "false를 반환하는 경우 (텍스트와 수식만 존재):",
+      "- 수식, 함수식, 방정식만 텍스트로 적혀있는 경우",
+      "- 문제에서 그래프나 도형을 '언급'하지만 실제로 그리지 않은 경우",
+      "- 함수 f(x)를 정의하고 접선, 넓이 등을 구하라는 문제이지만 그래프는 안 그려진 경우",
+      "- 보기 번호(①②③④⑤)만 있고 시각적 도형이 없는 경우",
+      "",
+      "## 핵심 원칙",
+      "- 문제가 그래프를 '필요로 할 수 있다'는 것과 이미지에 그래프가 '실제로 있다'는 것은 다릅니다.",
+      "- 반드시 이미지에 **눈으로 볼 수 있는** 도형/그래프/그림이 있을 때만 true입니다.",
+      "- 수식만 있는 문제는 아무리 복잡해도 false입니다.",
+      "",
+      "반드시 true 또는 false만 응답하세요.",
+    ].join("\n"),
   });
   const result = await model.generateContent([
     imageContent,
-    { text: "이 수학 문제에 도형, 그래프, 또는 그림이 있습니까? true/false만 답하세요." },
+    { text: "이 수학 문제 이미지에 도형, 그래프, 또는 그림이 **실제로 눈에 보이게 그려져** 있습니까? 수식만 있고 시각적 도형이 없으면 false입니다. true/false만 답하세요." },
   ]);
   const text = result.response.text()?.trim().toLowerCase() || "";
   return text.includes("true");
@@ -475,8 +497,18 @@ async function generateTikz(
     model: modelName,
     systemInstruction: [
       "당신은 수학 문제의 도형을 TikZ 코드로 변환하는 전문가입니다.",
-      "사용자가 수학 문제 이미지를 보내면, 도형/그래프 부분만 TikZ 코드로 생성합니다.",
+      "사용자가 수학 문제 이미지를 보내면, 이미지에 **실제로 그려져 있는** 도형/그래프 부분만 TikZ 코드로 생성합니다.",
       "",
+      "## 절대 금지 사항",
+      "- 이미지에 도형/그래프/그림이 **실제로 보이지 않으면** 절대로 TikZ 코드를 생성하지 마세요.",
+      "- 수식만 있는 문제에 대해 '이해를 돕기 위해' 또는 '시각화를 위해' 그래프를 임의로 생성하지 마세요.",
+      "- 문제가 함수, 접선, 넓이를 언급하더라도 이미지에 그래프가 그려져 있지 않으면 생성하지 마세요.",
+      "- 원본 이미지에 없는 도형을 추가하는 것은 금지입니다.",
+      "",
+      "## 도형이 없는 경우의 응답",
+      "이미지에 시각적 도형/그래프가 없으면 '도형 없음'이라고만 응답하세요.",
+      "",
+      "## 도형이 있는 경우의 응답",
       "응답 형식: ```latex 코드블록 안에 \\begin{tikzpicture}...\\end{tikzpicture}만 넣으세요.",
       "JSON으로 감싸지 마세요. 순수 TikZ 코드만 응답하세요.",
       "",
@@ -486,7 +518,7 @@ async function generateTikz(
 
   const result = await model.generateContent([
     imageContent,
-    { text: "이 수학 문제의 도형/그래프를 TikZ 코드로 생성해주세요. ```latex 코드블록으로 응답하세요." },
+    { text: "이 수학 문제 이미지에 **실제로 그려진** 도형/그래프가 있다면 TikZ 코드로 생성해주세요. 수식만 있고 도형이 없으면 '도형 없음'이라고만 답하세요. ```latex 코드블록으로 응답하세요." },
   ]);
   const text = result.response.text();
   if (!text) return null;
@@ -515,21 +547,31 @@ export async function analyzeProblemImage(
     inlineData: { mimeType: mediaType, data: imageBase64 },
   };
 
-  // 텍스트 분석: usePro이면 Pro, 아니면 Flash (cases 검증 실패 시 자동 Pro 재시도)
-  // TikZ 생성: 항상 Pro (정확도 우선)
+  // Step 0: Flash로 도형 유무 빠르게 판별 (게이트)
+  // Step 1: 텍스트 분석 + (도형 있을 때만) TikZ 생성
   const textTier = usePro ? "pro" : "flash";
-  console.log(`${textTier}(텍스트) + Pro(TikZ) 병렬 시작`);
 
-  const [parsed, tikzCode] = await Promise.all([
+  // 도형 감지와 텍스트 분석을 병렬로 시작
+  const [diagramDetected, parsed] = await Promise.all([
+    detectDiagram(client, imageContent),
     analyzeText(client, imageContent, userMessage, textTier),
-    generateTikz(client, imageContent, "pro"),
   ]);
+  console.log(`도형 감지: ${diagramDetected}, 텍스트(${textTier}) 완료`);
+
+  // 도형이 감지된 경우에만 TikZ 생성
+  let tikzCode: string | null = null;
+  if (diagramDetected) {
+    console.log("도형 감지됨 → Pro TikZ 생성 시작");
+    tikzCode = await generateTikz(client, imageContent, "pro");
+  }
 
   const hasDiagram = !!tikzCode;
   if (tikzCode) {
     console.log("Pro TikZ 생성 성공");
+  } else if (diagramDetected) {
+    console.log("도형 감지되었으나 TikZ 생성 실패 (Pro가 TikZ 미반환)");
   } else {
-    console.log("도형 없음 (Pro가 TikZ 미반환)");
+    console.log("도형 없음 (Flash 감지: false → TikZ 생성 건너뜀)");
   }
 
   // TikZ → PNG 렌더링 + 레이아웃 자동 판별
