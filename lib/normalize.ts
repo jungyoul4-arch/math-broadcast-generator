@@ -42,10 +42,11 @@ export function normalizeLatexInHtml(html: string): string {
  */
 function renderOne(latex: string, displayMode: boolean): string {
   try {
+    // cases/aligned 등 환경은 inline이라도 display mode로 렌더링 (줄바꿈 필수)
+    const needsDisplay = displayMode || /\\begin\{(cases|aligned|array|pmatrix|bmatrix|vmatrix)\}/.test(latex);
     return katex.renderToString(latex, {
-      displayMode,
+      displayMode: needsDisplay,
       throwOnError: false,
-      output: "html",
     });
   } catch {
     // SSR 실패 → 원본 유지, 브라우저 KaTeX JS가 처리
