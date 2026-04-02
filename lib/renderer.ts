@@ -10,7 +10,7 @@
 import { chromium, type Browser, type BrowserContext } from "playwright";
 import fs from "fs";
 import path from "path";
-import { normalizeLatexInHtml } from "./normalize";
+import { normalizeLatexInHtml, renderLatexSsr } from "./normalize";
 
 const MAX_CONCURRENT = 4;
 const KATEX_TIMEOUT = 8000; // KaTeX 로딩 최대 대기
@@ -139,25 +139,24 @@ async function renderSingle(
   const page = await context.newPage();
 
   try {
-    // 최종 정규화 (CDN은 context 라우트에서 로컬로 인터셉트됨)
-    await page.setContent(normalizeLatexInHtml(html), { waitUntil: "networkidle" });
+    // SSR: 정규화 → KaTeX를 서버에서 HTML로 변환 → Playwright는 완성 HTML만 렌더링
+    const ssrHtml = renderLatexSsr(normalizeLatexInHtml(html));
+    await page.setContent(ssrHtml, { waitUntil: "load" });
 
-    // KaTeX 렌더링 완료를 동적으로 감지
-    await page.waitForFunction(
-      () => {
-        const katexElements = document.querySelectorAll(".katex");
-        const mathElements = document.querySelectorAll('[data-math-style]');
-        if (katexElements.length > 0 || mathElements.length > 0) return true;
-        const body = document.body.textContent || "";
-        const hasDollarMath = /\$[^$]+\$/.test(body);
-        if (!hasDollarMath) return true;
-        return false;
-      },
-      { timeout: KATEX_TIMEOUT }
-    ).catch(() => {});
+    // SSR이 처리 못한 수식이 남아있을 경우 브라우저 KaTeX JS fallback 대기
+    const hasRemainingMath = await page.evaluate(() => {
+      const body = document.body.textContent || "";
+      return /\$[^$]+\$/.test(body);
+    });
+    if (hasRemainingMath) {
+      await page.waitForFunction(
+        () => document.querySelectorAll(".katex").length > 0,
+        { timeout: KATEX_TIMEOUT }
+      ).catch(() => {});
+    }
 
-    // 폰트 로딩 보장 (짧은 안전 마진)
-    await page.waitForTimeout(300);
+    // 폰트 로딩 보장 (KaTeX 웹폰트는 로컬이므로 짧게)
+    await page.waitForTimeout(100);
 
     const container = await page.$(".problem-container");
     if (!container) {
@@ -231,20 +230,22 @@ export async function renderPreview(html: string): Promise<Buffer> {
   const page = await context.newPage();
 
   try {
-    // 최종 정규화 (CDN은 context 라우트에서 로컬로 인터셉트됨)
-    await page.setContent(normalizeLatexInHtml(html), { waitUntil: "networkidle" });
+    // SSR: 정규화 → KaTeX를 서버에서 HTML로 변환
+    const ssrHtml = renderLatexSsr(normalizeLatexInHtml(html));
+    await page.setContent(ssrHtml, { waitUntil: "load" });
 
-    await page.waitForFunction(
-      () => {
-        const katex = document.querySelectorAll(".katex");
-        if (katex.length > 0) return true;
-        const body = document.body.textContent || "";
-        return !/\$[^$]+\$/.test(body);
-      },
-      { timeout: KATEX_TIMEOUT }
-    ).catch(() => {});
+    const hasRemainingMath = await page.evaluate(() => {
+      const body = document.body.textContent || "";
+      return /\$[^$]+\$/.test(body);
+    });
+    if (hasRemainingMath) {
+      await page.waitForFunction(
+        () => document.querySelectorAll(".katex").length > 0,
+        { timeout: KATEX_TIMEOUT }
+      ).catch(() => {});
+    }
 
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     await page.evaluate(() => {
       document.body.style.background = "#0d3b2e";

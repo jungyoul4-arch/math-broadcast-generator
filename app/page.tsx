@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import DropZone from "@/components/DropZone";
 import ProblemCard from "@/components/ProblemCard";
 import ProgressBar from "@/components/ProgressBar";
@@ -43,6 +43,8 @@ export default function Home() {
   const [savingToLibrary, setSavingToLibrary] = useState(false);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [uploadMode, setUploadMode] = useState<UploadMode>("problem");
+  const [autoRender, setAutoRender] = useState(false);
+  const autoRenderPending = useRef(false);
 
   const updateProblem = useCallback(
     (id: string, updates: Partial<ProblemState>) => {
@@ -180,8 +182,11 @@ export default function Home() {
       await Promise.all(batch.map(analyzeSingle));
     }
 
+    if (autoRender) {
+      autoRenderPending.current = true;
+    }
     setPhase("preview");
-  }, [problems, updateProblem, globalSource]);
+  }, [problems, updateProblem, globalSource, autoRender]);
 
   // 2. 미리보기 확인 후 렌더링 시작 (SSE 스트리밍)
   const handleRender = useCallback(async () => {
@@ -281,6 +286,14 @@ export default function Home() {
       setPhase("preview");
     }
   }, [problems, updateProblem]);
+
+  // 자동 변환: 분석 완료 → preview 진입 시 자동으로 렌더링 시작
+  useEffect(() => {
+    if (phase === "preview" && autoRenderPending.current) {
+      autoRenderPending.current = false;
+      handleRender();
+    }
+  }, [phase, handleRender]);
 
   // Pro로 도형 재생성 (전체 재분석, Pro TikZ 사용)
   const handleRegeneratePro = useCallback(async (prob: ProblemState) => {
@@ -912,6 +925,29 @@ export default function Home() {
           >
             분석 시작 ({pendingCount}개)
           </button>
+        )}
+
+        {/* 자동 변환 토글 */}
+        {pendingCount > 0 && phase !== "analyzing" && phase !== "rendering" && (
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              fontSize: "13px",
+              color: "rgba(255,255,255,0.6)",
+              cursor: "pointer",
+              userSelect: "none",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={autoRender}
+              onChange={(e) => setAutoRender(e.target.checked)}
+              style={{ accentColor: "#f9a825" }}
+            />
+            분석 후 자동 변환
+          </label>
         )}
 
         {/* 확인 후 변환 버튼 (preview 또는 done 상태에서 ready 카드가 있으면 표시) */}
