@@ -13,7 +13,9 @@ import path from "path";
 import { normalizeLatexInHtml, renderLatexSsr } from "./normalize";
 
 const MAX_CONCURRENT = 4;
+const MAX_PAGES = 8; // 컨텍스트 내 최대 동시 페이지 수
 const KATEX_TIMEOUT = 8000; // KaTeX 로딩 최대 대기
+let _openPages = 0;
 
 // ─── KaTeX 자원 로컬 캐시 (모듈 로드 시 1회 읽기) ───
 let _katexCss: string | null = null;
@@ -96,6 +98,7 @@ async function getBrowser(): Promise<Browser> {
     b.on("disconnected", () => {
       _browser = null;
       _context = null;
+      _routesRegistered = false;
     });
     return b;
   });
@@ -135,8 +138,18 @@ async function renderSingle(
   html: string,
   number: number
 ): Promise<RenderResult> {
+  if (_openPages >= MAX_PAGES) {
+    throw new Error(`문제 ${number}: 동시 페이지 한도 초과 (${MAX_PAGES})`);
+  }
+  _openPages++;
   const context = await getContext(browser);
-  const page = await context.newPage();
+  let page;
+  try {
+    page = await context.newPage();
+  } catch (e) {
+    _openPages--;
+    throw e;
+  }
 
   try {
     // SSR: 정규화 → KaTeX를 서버에서 HTML로 변환 → Playwright는 완성 HTML만 렌더링
@@ -175,7 +188,8 @@ async function renderSingle(
       height: box ? Math.round(box.height * 2) : 1600,
     };
   } finally {
-    await page.close();
+    _openPages--;
+    await page.close().catch(() => {});
   }
 }
 
@@ -225,9 +239,19 @@ export async function renderMultipleStreaming(
  * 싱글턴 브라우저 재사용
  */
 export async function renderPreview(html: string): Promise<Buffer> {
+  if (_openPages >= MAX_PAGES) {
+    throw new Error("미리보기: 동시 페이지 한도 초과");
+  }
+  _openPages++;
   const browser = await getBrowser();
   const context = await getContext(browser);
-  const page = await context.newPage();
+  let page;
+  try {
+    page = await context.newPage();
+  } catch (e) {
+    _openPages--;
+    throw e;
+  }
 
   try {
     // SSR: 정규화 → KaTeX를 서버에서 HTML로 변환
@@ -260,6 +284,7 @@ export async function renderPreview(html: string): Promise<Buffer> {
 
     return pngBuffer;
   } finally {
-    await page.close();
+    _openPages--;
+    await page.close().catch(() => {});
   }
 }

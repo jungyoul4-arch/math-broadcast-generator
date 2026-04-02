@@ -15,6 +15,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const MAX_ITEMS = 50;
+    const MAX_HTML_SIZE = 100_000; // 100KB per item
+    if (items.length > MAX_ITEMS) {
+      return new Response(
+        JSON.stringify({ error: `최대 ${MAX_ITEMS}개까지 렌더링 가능합니다` }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    for (const item of items) {
+      if (typeof item.html !== "string" || typeof item.number !== "number") {
+        return new Response(
+          JSON.stringify({ error: "잘못된 항목 형식입니다 (html: string, number: number 필수)" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (item.html.length > MAX_HTML_SIZE) {
+        return new Response(
+          JSON.stringify({ error: `문제 ${item.number}: HTML이 너무 큽니다 (${MAX_HTML_SIZE} bytes 초과)` }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (!item.html.includes("problem-container")) {
+        return new Response(
+          JSON.stringify({ error: `문제 ${item.number}: .problem-container가 없습니다` }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // SSE 스트리밍 — 완료되는 대로 클라이언트에 전송
     const encoder = new TextEncoder();
     const stream = new ReadableStream({

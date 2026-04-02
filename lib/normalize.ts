@@ -10,6 +10,8 @@
  */
 import katex from "katex";
 
+const DEBUG = process.env.MBG_DEBUG === "true";
+
 /**
  * $$ 블록 수식 내부의 백슬래시를 정규화
  */
@@ -47,8 +49,12 @@ function renderOne(latex: string, displayMode: boolean): string {
     return katex.renderToString(latex, {
       displayMode: needsDisplay,
       throwOnError: false,
+      errorColor: DEBUG ? "#ff0000" : "#ffffff",
     });
-  } catch {
+  } catch (e) {
+    if (DEBUG) {
+      console.warn("⚠ [KaTeX SSR] 변환 실패:", latex.substring(0, 80), e instanceof Error ? e.message : "");
+    }
     // SSR 실패 → 원본 유지, 브라우저 KaTeX JS가 처리
     return displayMode ? `$$${latex}$$` : `$${latex}$`;
   }
