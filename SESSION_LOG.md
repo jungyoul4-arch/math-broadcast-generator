@@ -1,21 +1,36 @@
 # 세션 로그 — 2026-04-02 (2차)
 
-## 완료된 작업
+## 완료된 작업 (커밋 4개)
 
-### ⑦ KaTeX SSR (서버사이드 수식 렌더링)
+### ⑦ KaTeX SSR + ⑨ 자동 변환 옵션 (커밋 2eb96cb)
 - `lib/normalize.ts`에 `renderLatexSsr()` 함수 추가 — `katex.renderToString()`으로 Node.js에서 수식을 미리 HTML 변환
 - `lib/renderer.ts`에서 `setContent()` 직전에 SSR 적용, `waitUntil`을 `"networkidle"` → `"load"`로 변경
-- KaTeX JS 대기 로직을 fallback 전용으로 경량화 (SSR 실패 시에만 동작)
-- 안전 마진 300ms → 100ms로 축소
-- `@types/katex` devDependency 추가
-
-### ⑨ 자동 변환 옵션 (UX 개선)
 - "분석 후 자동 변환" 체크박스 추가 (기본값: 꺼짐)
-- 분석 완료 → preview 진입 시 자동으로 `handleRender()` 호출
-- `useRef` + `useEffect` 패턴으로 state 의존성 안정적 처리
+- 9개 비효율성 최적화 모두 완료 (9/9)
+
+### KaTeX SSR cases 한 줄 렌더링 버그 수정 (커밋 986c1b7)
+- conditionHtml의 cases가 `$...$` (inline)으로 들어올 때 displayMode: false로 렌더링되어 `\\` 줄바꿈이 무시되던 버그
+- `\begin{cases}` 등 환경을 자동 감지하여 display mode로 전환
+- `output: "html"` 옵션 제거 → 기본값(htmlAndMathml)으로 완전한 렌더링
+
+### Playwright 메모리 안전성 + KaTeX 에러 가시성 + 렌더 API 검증 (커밋 744c3a1)
+- 동시 페이지 수 추적(`_openPages`) + quota 제한(MAX_PAGES=8)
+- `page.close()` 실패 방어, disconnect 시 `_routesRegistered` 리셋
+- KaTeX SSR 실패 시 콘솔 경고 + errorColor로 오류 가시화
+- 렌더 API: 항목 수/타입/크기 검증, `.problem-container` 존재 확인
+
+### 3단계 리뷰 체인 지적 반영 (커밋 ac4232e)
+- errorColor `#ffffff` → `#ff6b6b` (투명 PNG 위 오류 가시화)
+- autoRender 체크박스 해제 시 `autoRenderPending.current = false` 동기화
+
+## 3단계 리뷰 체인 결과
+- 검토자(feature-dev) → 피드백(coderabbit) → 평가자(superpowers)
+- 종합 등급: **B+** — 프로덕션 배포 가능, show-stopper 없음
+- Playwright 테스트: 기하(14번, TikZ 도형) + 확률통계(27번, cases 환경) 모두 정상 렌더링 확인
 
 ## 다음 세션에서 할 일
-- 9개 비효율성 모두 완료 — 추가 최적화 필요 시 새로운 분석 진행
+- Railway 프로덕션 배포 (로컬 검증 완료)
+- 필요 시 추가 문제 유형별 테스트
 
 ---
 
