@@ -6,7 +6,14 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { generateProblemHtml, type ProblemData } from "./template";
 import { renderTikzToPng } from "./tikz-renderer";
 
-function getClient() {
+const DEBUG = process.env.MBG_DEBUG === "true";
+
+// ─── Gemini 클라이언트 싱글턴 ───
+let _geminiClient: InstanceType<typeof GoogleGenerativeAI> | null = null;
+
+function getClient(): InstanceType<typeof GoogleGenerativeAI> {
+  if (_geminiClient) return _geminiClient;
+
   let key = process.env.GEMINI_API_KEY;
   if (!key) {
     try {
@@ -23,7 +30,8 @@ function getClient() {
   if (!key) {
     throw new Error("GEMINI_API_KEY가 없습니다. .env.local 파일을 확인하세요.");
   }
-  return new GoogleGenerativeAI(key);
+  _geminiClient = new GoogleGenerativeAI(key);
+  return _geminiClient;
 }
 
 const SYSTEM_PROMPT = `당신은 수학 문제 이미지를 분석하여 HTML+LaTeX 코드로 변환하는 전문가입니다.
@@ -340,19 +348,19 @@ function fixMathOperators(html: string): string {
     "not", "prime", "ldots", "cdots", "vdots", "ddots",
   ];
 
-  const allOps = [...operators, ...symbols];
+  // 통합 regex: 긴 연산자를 먼저 매칭하도록 길이 역순 정렬 (1회 컴파일, 재사용)
+  const allOps = [...operators, ...symbols].sort((a, b) => b.length - a.length);
+  const opsPattern = allOps.join("|");
+  const unescapedOpRegex = new RegExp(`(?<!\\\\)(?<![a-zA-Z])(${opsPattern})(?![a-zA-Z])`, "g");
+  const doubleEscapedOpRegex = new RegExp(`\\\\\\\\(${opsPattern})(?![a-zA-Z])`, "g");
 
   let result = html.replace(/\$\$[\s\S]*?\$\$|\$[^$]+?\$/g, (match) => {
     let fixed = match;
-    for (const op of allOps) {
-      const regex = new RegExp(`(?<!\\\\)(?<![a-zA-Z])${op}(?![a-zA-Z])`, "g");
-      fixed = fixed.replace(regex, `\\${op}`);
-    }
+    // 한 번의 regex로 모든 연산자 매칭 + 백슬래시 추가
+    fixed = fixed.replace(unescapedOpRegex, "\\$1");
     fixed = fixed.replace(/->/g, "\\to");
-    // 이중 백슬래시 수리 (\\\\op → \\op)
-    for (const op of allOps) {
-      fixed = fixed.replace(new RegExp(`\\\\\\\\${op}`, "g"), `\\${op}`);
-    }
+    // 이중 백슬래시 수리 (\\op → \op) — 역시 한 번의 regex로
+    fixed = fixed.replace(doubleEscapedOpRegex, "\\$1");
     return fixed;
   });
 
@@ -410,24 +418,24 @@ function fixDoubleEscapedEnvironments(html: string): string {
  *   $$f(x) = \begin{cases} ax^2-2 & (x < 2) \\ 3x & (x \geq 2) \end{cases}$$
  */
 function fixPiecewiseFunctions(html: string): string {
-  console.log("🔍 [DEBUG] fixPiecewiseFunctions 입력:", JSON.stringify(html).slice(0, 500));
+  if (DEBUG) console.log("🔍 [DEBUG] fixPiecewiseFunctions 입력:", JSON.stringify(html).slice(0, 500));
   return html.replace(/\$\$([\s\S]*?)\$\$/g, (match, inner: string) => {
     // cases가 이미 있으면 건너뛰기
     if (inner.includes("\\begin{cases}")) {
-      console.log("✅ [DEBUG] cases 이미 존재, 스킵");
+      if (DEBUG) console.log("✅ [DEBUG] cases 이미 존재, 스킵");
       return match;
     }
 
     // 조건 패턴이 2개 이상 있는지 확인: (변수 부등호 값) 형태
     const condPattern = /\(\s*[a-zA-Z]\s*(?:[<>≤≥]|\\leq|\\geq|\\le|\\ge|\\leqslant|\\geqslant)\s*[^)]*\)/g;
     const conditions = inner.match(condPattern);
-    console.log("🔍 [DEBUG] $$ 블록 내용:", JSON.stringify(inner).slice(0, 300));
-    console.log("🔍 [DEBUG] 조건 패턴 감지:", conditions);
+    if (DEBUG) console.log("🔍 [DEBUG] $$ 블록 내용:", JSON.stringify(inner).slice(0, 300));
+    if (DEBUG) console.log("🔍 [DEBUG] 조건 패턴 감지:", conditions);
     if (!conditions || conditions.length < 2) return match;
 
     // = \{ 또는 = \left\{ 패턴이 있는지 확인
     const hasBraceOpen = /=\s*(?:\\left\s*)?\\?\{/.test(inner);
-    console.log("🔍 [DEBUG] 중괄호 열기 감지:", hasBraceOpen, "inner:", JSON.stringify(inner).slice(0, 200));
+    if (DEBUG) console.log("🔍 [DEBUG] 중괄호 열기 감지:", hasBraceOpen, "inner:", JSON.stringify(inner).slice(0, 200));
     if (!hasBraceOpen) return match;
 
     console.log("🔧 구간별 함수 자동 수정: cases 환경으로 변환");
@@ -558,8 +566,8 @@ async function analyzeText(
   // ★ 디버그: Gemini 원본 JSON (escapeLatexInJson 적용 전)
   const casesArea = jsonStr.match(/begin.{0,50}cases/)?.[0];
   if (casesArea) {
-    console.log("🔬 [DEBUG] Gemini 원본 cases 근처:", JSON.stringify(casesArea));
-    console.log("🔬 [DEBUG] 백슬래시 charCodes:", [...casesArea].map(c => c === '\\' ? '\\' : '').filter(Boolean).length, "개");
+    if (DEBUG) console.log("🔬 [DEBUG] Gemini 원본 cases 근처:", JSON.stringify(casesArea));
+    if (DEBUG) console.log("🔬 [DEBUG] 백슬래시 charCodes:", [...casesArea].map(c => c === '\\' ? '\\' : '').filter(Boolean).length, "개");
   }
 
   const escaped = escapeLatexInJson(jsonStr);
@@ -567,7 +575,7 @@ async function analyzeText(
   // ★ 디버그: escapeLatexInJson 후
   const casesArea2 = escaped.match(/begin.{0,50}cases/)?.[0];
   if (casesArea2) {
-    console.log("🔬 [DEBUG] escapeLatex 후 cases 근처:", JSON.stringify(casesArea2));
+    if (DEBUG) console.log("🔬 [DEBUG] escapeLatex 후 cases 근처:", JSON.stringify(casesArea2));
   }
 
   let parsed: Record<string, unknown>;
@@ -582,7 +590,7 @@ async function analyzeText(
   }
 
   // ★ 디버그: Gemini 원본 bodyHtml 출력
-  console.log("📋 [DEBUG] Gemini bodyHtml 원본:", JSON.stringify((parsed.bodyHtml as string) || "").slice(0, 500));
+  if (DEBUG) console.log("📋 [DEBUG] Gemini bodyHtml 원본:", JSON.stringify((parsed.bodyHtml as string) || "").slice(0, 500));
 
   // ★ 검증: 조건부 함수가 있는데 \begin{cases}가 누락되면 재시도
   const allHtml = ((parsed.bodyHtml as string) || "") + ((parsed.conditionHtml as string) || "");
@@ -672,15 +680,23 @@ export async function analyzeProblemImage(
     inlineData: { mimeType: mediaType, data: imageBase64 },
   };
 
-  // 텍스트 분석: usePro이면 Pro, 아니면 Flash (cases 검증 실패 시 자동 Pro 재시도)
-  // TikZ 생성: 항상 Pro (정확도 우선)
+  // Phase 1: 텍스트 분석 + 도형 유무 감지를 병렬 실행 (Flash는 ~0.5초)
   const textTier = usePro ? "pro" : "flash";
-  console.log(`${textTier}(텍스트) + Pro(TikZ) 병렬 시작`);
+  console.log(`${textTier}(텍스트) + Flash(도형감지) 병렬 시작`);
 
-  const [parsed, tikzCode] = await Promise.all([
+  const [parsed, hasDiagramDetected] = await Promise.all([
     analyzeText(client, imageContent, userMessage, textTier),
-    generateTikz(client, imageContent, "pro"),
+    detectDiagram(client, imageContent),
   ]);
+
+  // Phase 2: 도형이 있을 때만 Pro TikZ 생성 (비용 절감)
+  let tikzCode: string | null = null;
+  if (hasDiagramDetected) {
+    console.log("도형 감지됨 → Pro TikZ 생성 시작");
+    tikzCode = await generateTikz(client, imageContent, "pro");
+  } else {
+    console.log("도형 없음 → TikZ 생성 스킵 (Pro API 비용 절감)");
+  }
 
   const hasDiagram = !!tikzCode;
   if (tikzCode) {
@@ -737,8 +753,8 @@ export async function analyzeProblemImage(
   const beginIdx = finalBody.indexOf("begin{cases}");
   if (beginIdx >= 0) {
     const around = finalBody.slice(Math.max(0, beginIdx - 5), beginIdx + 20);
-    console.log("🔬 [DEBUG] 최종 begin{cases} 주변:", JSON.stringify(around));
-    console.log("🔬 [DEBUG] begin 앞 5글자 charCodes:", [...finalBody.slice(Math.max(0, beginIdx - 5), beginIdx)].map(c => c.charCodeAt(0)));
+    if (DEBUG) console.log("🔬 [DEBUG] 최종 begin{cases} 주변:", JSON.stringify(around));
+    if (DEBUG) console.log("🔬 [DEBUG] begin 앞 5글자 charCodes:", [...finalBody.slice(Math.max(0, beginIdx - 5), beginIdx)].map(c => c.charCodeAt(0)));
   }
 
   const html = generateProblemHtml(problemData);

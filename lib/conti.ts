@@ -4,7 +4,12 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 
-function getClient() {
+// ─── Anthropic 클라이언트 싱글턴 ───
+let _anthropicClient: InstanceType<typeof Anthropic> | null = null;
+
+function getClient(): InstanceType<typeof Anthropic> {
+  if (_anthropicClient) return _anthropicClient;
+
   let key = process.env.ANTHROPIC_API_KEY;
   if (!key) {
     try {
@@ -21,7 +26,8 @@ function getClient() {
   if (!key) {
     throw new Error("ANTHROPIC_API_KEY가 없습니다.");
   }
-  return new Anthropic({ apiKey: key });
+  _anthropicClient = new Anthropic({ apiKey: key });
+  return _anthropicClient;
 }
 
 export interface ContiData {

@@ -5,15 +5,82 @@
  * - 싱글턴 브라우저 풀 (cold start 제거)
  * - page.setContent() 직접 주입 (파일 I/O 제거)
  * - KaTeX 렌더링 완료 감지 (고정 대기 제거)
+ * - KaTeX CSS/JS 인라인 삽입 (CDN 의존 제거)
  */
 import { chromium, type Browser, type BrowserContext } from "playwright";
+import fs from "fs";
+import path from "path";
+import { normalizeLatexInHtml } from "./normalize";
 
 const MAX_CONCURRENT = 4;
 const KATEX_TIMEOUT = 8000; // KaTeX 로딩 최대 대기
 
-// ─── 싱글턴 브라우저 풀 ───
+// ─── KaTeX 자원 로컬 캐시 (모듈 로드 시 1회 읽기) ───
+let _katexCss: string | null = null;
+let _katexJs: string | null = null;
+let _autoRenderJs: string | null = null;
+
+function getKatexAssets(): { css: string; js: string; autoRender: string } {
+  if (!_katexCss) {
+    const katexDir = path.join(process.cwd(), "public", "katex");
+    try {
+      _katexCss = fs.readFileSync(path.join(katexDir, "katex.min.css"), "utf-8");
+      _katexJs = fs.readFileSync(path.join(katexDir, "katex.min.js"), "utf-8");
+      _autoRenderJs = fs.readFileSync(path.join(katexDir, "auto-render.min.js"), "utf-8");
+      // 폰트 경로를 인라인 base64로는 변환하지 않고, 상대 경로를 file:// 절대 경로로 변환
+      const fontsDir = path.join(katexDir, "fonts");
+      _katexCss = _katexCss.replace(/url\(fonts\//g, `url(file://${fontsDir}/`);
+      console.log("✅ KaTeX 로컬 자원 로드 완료 (CDN 미사용)");
+    } catch {
+      console.warn("⚠ KaTeX 로컬 자원 없음 — CDN fallback 사용");
+      _katexCss = "";
+      _katexJs = "";
+      _autoRenderJs = "";
+    }
+  }
+  return { css: _katexCss!, js: _katexJs!, autoRender: _autoRenderJs! };
+}
+
+/**
+ * Playwright Context에 CDN 인터셉트 라우트를 등록
+ * CDN 요청을 로컬 파일로 응답 → 네트워크 0, defer 실행 순서 유지
+ */
+let _routesRegistered = false;
+
+async function registerLocalRoutes(context: BrowserContext): Promise<void> {
+  if (_routesRegistered) return;
+
+  const assets = getKatexAssets();
+  if (!assets.css) return; // 로컬 자원 없으면 CDN 그대로 사용
+
+  // KaTeX CSS
+  await context.route("**/katex*/*.css", (route) => {
+    route.fulfill({ body: assets.css, contentType: "text/css" });
+  });
+  // KaTeX JS
+  await context.route("**/katex.min.js", (route) => {
+    route.fulfill({ body: assets.js, contentType: "application/javascript" });
+  });
+  // auto-render JS
+  await context.route("**/auto-render.min.js", (route) => {
+    route.fulfill({ body: assets.autoRender, contentType: "application/javascript" });
+  });
+  // Google Fonts — 빈 응답 (시스템 폰트 사용)
+  await context.route("**/fonts.googleapis.com/**", (route) => {
+    route.fulfill({ body: "", contentType: "text/css" });
+  });
+  await context.route("**/fonts.gstatic.com/**", (route) => {
+    route.fulfill({ body: "", contentType: "font/woff2" });
+  });
+
+  _routesRegistered = true;
+  console.log("✅ CDN 인터셉트 라우트 등록 완료 (로컬 KaTeX 사용)");
+}
+
+// ─── 싱글턴 브라우저 + 컨텍스트 풀 ───
 let _browser: Browser | null = null;
 let _browserPromise: Promise<Browser> | null = null;
+let _context: BrowserContext | null = null;
 
 async function getBrowser(): Promise<Browser> {
   if (_browser?.isConnected()) return _browser;
@@ -24,14 +91,31 @@ async function getBrowser(): Promise<Browser> {
   _browserPromise = chromium.launch().then((b) => {
     _browser = b;
     _browserPromise = null;
+    _context = null; // 브라우저 재시작 시 컨텍스트도 리셋
     // 브라우저가 예기치 않게 닫히면 참조 정리
     b.on("disconnected", () => {
       _browser = null;
+      _context = null;
     });
     return b;
   });
 
   return _browserPromise;
+}
+
+/**
+ * 싱글턴 컨텍스트 — 브라우저 내 1개 컨텍스트 재사용
+ * KaTeX 인라인 자원의 파싱 결과가 캐시되어 후속 렌더링이 빨라짐
+ */
+async function getContext(browser: Browser): Promise<BrowserContext> {
+  if (_context) return _context;
+  _context = await browser.newContext({
+    viewport: { width: 1200, height: 800 },
+    deviceScaleFactor: 2,
+  });
+  // CDN 요청을 로컬 파일로 인터셉트
+  await registerLocalRoutes(_context);
+  return _context;
 }
 
 export interface RenderResult {
@@ -51,63 +135,26 @@ async function renderSingle(
   html: string,
   number: number
 ): Promise<RenderResult> {
-  const context = await browser.newContext({
-    viewport: { width: 1200, height: 800 },
-    deviceScaleFactor: 2,
-  });
+  const context = await getContext(browser);
   const page = await context.newPage();
 
   try {
-    // ★ 최종 정규화: JSON 왕복 과정에서 백슬래시가 손실/증가되는 문제를 렌더링 직전에 수리
-    // KaTeX 표준: \command (1개), \\ 줄바꿈 (2개). 그 외 수준은 전부 정규화.
-    const normalizedHtml = html.replace(/\$\$([\s\S]*?)\$\$/g, (_, inner: string) => {
-      let fixed = inner;
-      // Step 1: 2개 이상 연속 백슬래시 + 영문자 → 1개 + 영문자 (명령어 정규화)
-      fixed = fixed.replace(/\\{2,}([a-zA-Z])/g, "\\$1");
-      // Step 2: 3개 이상 연속 백슬래시 + 비영문자/끝 → 2개 (줄바꿈 정규화)
-      fixed = fixed.replace(/\\{3,}(?=[^a-zA-Z]|$)/g, "\\\\");
-      // Step 3: cases 환경 안에서 손실된 줄바꿈 복원
-      // 단독 \ + 공백(줄바꿈이 1개로 줄어든 경우) → \\ (2개로 복원)
-      // (?<!\\) lookbehind로 이미 올바른 \\의 두 번째 \는 건너뜀
-      if (fixed.includes("begin{cases}")) {
-        fixed = fixed.replace(/(?<!\\)\\(?!\\)(?=\s)/g, "\\\\");
-      }
-      return `$$${fixed}$$`;
-    });
+    // 최종 정규화 (CDN은 context 라우트에서 로컬로 인터셉트됨)
+    await page.setContent(normalizeLatexInHtml(html), { waitUntil: "networkidle" });
 
-    // ★ 디버그: 정규화 후 최종 $$ 블록 charCodes 확인
-    const dollarBlock = normalizedHtml.match(/\$\$([\s\S]*?)\$\$/);
-    if (dollarBlock) {
-      const block = dollarBlock[0];
-      console.log("🎭 [RENDERER] 정규화 후 $$ 블록:", JSON.stringify(block));
-      // 줄바꿈(\\) 주변 charCodes 확인
-      const idx3x = block.indexOf("3x");
-      if (idx3x >= 0) {
-        const before3x = block.slice(Math.max(0, idx3x - 5), idx3x);
-        console.log("🎭 [RENDERER] 3x 앞 charCodes:", [...before3x].map(c => c.charCodeAt(0)));
-      }
-    }
-
-    // setContent으로 직접 주입 — 파일 I/O 완전 제거
-    await page.setContent(normalizedHtml, { waitUntil: "networkidle" });
-
-    // KaTeX 렌더링 완료를 동적으로 감지 (고정 5초 대기 제거)
+    // KaTeX 렌더링 완료를 동적으로 감지
     await page.waitForFunction(
       () => {
         const katexElements = document.querySelectorAll(".katex");
         const mathElements = document.querySelectorAll('[data-math-style]');
-        // KaTeX가 있으면 렌더 완료 확인, 없으면 바로 통과
         if (katexElements.length > 0 || mathElements.length > 0) return true;
-        // auto-render가 아직 실행 안 됐을 수 있으므로 $ 수식이 있는지 확인
         const body = document.body.textContent || "";
         const hasDollarMath = /\$[^$]+\$/.test(body);
-        if (!hasDollarMath) return true; // 수식 없으면 바로 통과
-        return false; // 수식 있는데 아직 렌더 안 됨 — 대기
+        if (!hasDollarMath) return true;
+        return false;
       },
       { timeout: KATEX_TIMEOUT }
-    ).catch(() => {
-      // 타임아웃이어도 진행 (fallback)
-    });
+    ).catch(() => {});
 
     // 폰트 로딩 보장 (짧은 안전 마진)
     await page.waitForTimeout(300);
@@ -129,7 +176,7 @@ async function renderSingle(
       height: box ? Math.round(box.height * 2) : 1600,
     };
   } finally {
-    await context.close();
+    await page.close();
   }
 }
 
@@ -180,24 +227,12 @@ export async function renderMultipleStreaming(
  */
 export async function renderPreview(html: string): Promise<Buffer> {
   const browser = await getBrowser();
-  const context = await browser.newContext({
-    viewport: { width: 1200, height: 800 },
-    deviceScaleFactor: 2,
-  });
+  const context = await getContext(browser);
   const page = await context.newPage();
 
   try {
-    // 최종 정규화 (renderSingle과 동일)
-    const normalizedHtml = html.replace(/\$\$([\s\S]*?)\$\$/g, (_, inner: string) => {
-      let fixed = inner;
-      fixed = fixed.replace(/\\{2,}([a-zA-Z])/g, "\\$1");
-      fixed = fixed.replace(/\\{3,}(?=[^a-zA-Z]|$)/g, "\\\\");
-      if (fixed.includes("begin{cases}")) {
-        fixed = fixed.replace(/(?<!\\)\\(?!\\)(?=\s)/g, "\\\\");
-      }
-      return `$$${fixed}$$`;
-    });
-    await page.setContent(normalizedHtml, { waitUntil: "networkidle" });
+    // 최종 정규화 (CDN은 context 라우트에서 로컬로 인터셉트됨)
+    await page.setContent(normalizeLatexInHtml(html), { waitUntil: "networkidle" });
 
     await page.waitForFunction(
       () => {
@@ -224,6 +259,6 @@ export async function renderPreview(html: string): Promise<Buffer> {
 
     return pngBuffer;
   } finally {
-    await context.close();
+    await page.close();
   }
 }
