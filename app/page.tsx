@@ -943,7 +943,10 @@ export default function Home() {
             <input
               type="checkbox"
               checked={autoRender}
-              onChange={(e) => setAutoRender(e.target.checked)}
+              onChange={(e) => {
+                setAutoRender(e.target.checked);
+                if (!e.target.checked) autoRenderPending.current = false;
+              }}
               style={{ accentColor: "#f9a825" }}
             />
             분석 후 자동 변환

@@ -49,7 +49,7 @@ function renderOne(latex: string, displayMode: boolean): string {
     return katex.renderToString(latex, {
       displayMode: needsDisplay,
       throwOnError: false,
-      errorColor: DEBUG ? "#ff0000" : "#ffffff",
+      errorColor: DEBUG ? "#ff0000" : "#ff6b6b",
     });
   } catch (e) {
     if (DEBUG) {
