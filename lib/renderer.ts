@@ -67,9 +67,10 @@ async function renderSingle(
       // Step 2: 3개 이상 연속 백슬래시 + 비영문자/끝 → 2개 (줄바꿈 정규화)
       fixed = fixed.replace(/\\{3,}(?=[^a-zA-Z]|$)/g, "\\\\");
       // Step 3: cases 환경 안에서 손실된 줄바꿈 복원
-      // 단일 \ + 공백(줄바꿈이 1개로 줄어든 경우) → \\ (2개로 복원)
+      // 단독 \ + 공백(줄바꿈이 1개로 줄어든 경우) → \\ (2개로 복원)
+      // (?<!\\) lookbehind로 이미 올바른 \\의 두 번째 \는 건너뜀
       if (fixed.includes("begin{cases}")) {
-        fixed = fixed.replace(/\\(?!\\)(?=\s)/g, "\\\\");
+        fixed = fixed.replace(/(?<!\\)\\(?!\\)(?=\s)/g, "\\\\");
       }
       return `$$${fixed}$$`;
     });
@@ -192,7 +193,7 @@ export async function renderPreview(html: string): Promise<Buffer> {
       fixed = fixed.replace(/\\{2,}([a-zA-Z])/g, "\\$1");
       fixed = fixed.replace(/\\{3,}(?=[^a-zA-Z]|$)/g, "\\\\");
       if (fixed.includes("begin{cases}")) {
-        fixed = fixed.replace(/\\(?!\\)(?=\s)/g, "\\\\");
+        fixed = fixed.replace(/(?<!\\)\\(?!\\)(?=\s)/g, "\\\\");
       }
       return `$$${fixed}$$`;
     });
