@@ -130,6 +130,7 @@ export default function Home() {
         const formData = new FormData();
         formData.append("image", prob.file);
         formData.append("number", prob.number.toString());
+        formData.append("itemType", prob.itemType);
         const source = prob.source || globalSource;
         if (source) {
           formData.append("source", source);
@@ -153,16 +154,24 @@ export default function Home() {
 
         const data = await res.json();
 
-        updateProblem(prob.id, {
-          status: "ready",
-          subject: data.problemData.subject,
-          type: data.problemData.type,
-          points: data.problemData.points,
-          unitName: data.problemData.unitName || "",
-          bodyHtml: data.problemData.bodyHtml || "",
-          html: data.html,
-          contiHtml: data.contiHtml || undefined,
-        });
+        if (data.itemType === "lecture-note") {
+          updateProblem(prob.id, {
+            status: "ready",
+            subject: "강의노트",
+            contiHtml: data.contiHtml,
+          });
+        } else {
+          updateProblem(prob.id, {
+            status: "ready",
+            subject: data.problemData.subject,
+            type: data.problemData.type,
+            points: data.problemData.points,
+            unitName: data.problemData.unitName || "",
+            bodyHtml: data.problemData.bodyHtml || "",
+            html: data.html,
+            contiHtml: data.contiHtml || undefined,
+          });
+        }
       } catch (error: unknown) {
         const message =
           error instanceof Error ? error.message : "알 수 없는 오류";
@@ -191,7 +200,7 @@ export default function Home() {
   // 2. 미리보기 확인 후 렌더링 시작 (SSE 스트리밍)
   const handleRender = useCallback(async () => {
     const readyProblems = problems.filter(
-      (p) => p.status === "ready" && p.html
+      (p) => p.status === "ready" && (p.html || p.contiHtml)
     );
     if (readyProblems.length === 0) return;
 
@@ -203,25 +212,20 @@ export default function Home() {
     });
 
     try {
+      const items: Array<{ html: string; number: number; type: "problem" | "conti" }> = [];
+      for (const p of readyProblems) {
+        if (p.html) {
+          items.push({ html: p.html, number: p.number, type: "problem" });
+        }
+        if (p.contiHtml) {
+          items.push({ html: p.contiHtml, number: p.number + 1000, type: "conti" });
+        }
+      }
+
       const res = await fetch("/api/render", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: [
-            ...readyProblems.map((p) => ({
-              html: p.html,
-              number: p.number,
-              type: "problem" as const,
-            })),
-            ...readyProblems
-              .filter((p) => p.contiHtml)
-              .map((p) => ({
-                html: p.contiHtml!,
-                number: p.number + 1000,
-                type: "conti" as const,
-              })),
-          ],
-        }),
+        body: JSON.stringify({ items }),
       });
 
       if (!res.ok) {
@@ -256,7 +260,15 @@ export default function Home() {
             if (result.number >= 1000) {
               const prob = readyProblems.find((p) => p.number === result.number - 1000);
               if (prob) {
-                updateProblem(prob.id, { contiPngBase64: result.pngBase64 });
+                // 강의노트 전용 항목(html 없음)은 콘티 PNG로 done 처리
+                const isContiOnly = !prob.html;
+                updateProblem(prob.id, {
+                  contiPngBase64: result.pngBase64,
+                  ...(isContiOnly ? { status: "done" as const } : {}),
+                });
+                if (isContiOnly) {
+                  setRenderProgress((prev) => prev + 1);
+                }
               }
             } else {
               const prob = readyProblems.find((p) => p.number === result.number);
@@ -353,11 +365,14 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }, []);
 
-  // 3. 개별 다운로드 (문제)
+  // 3. 개별 다운로드 (문제 또는 강의노트)
   const handleDownloadProblem = useCallback(
     (prob: ProblemState) => {
-      if (!prob.pngBase64) return;
-      downloadBase64(prob.pngBase64, `prob${prob.number}_문제.png`);
+      if (prob.pngBase64) {
+        downloadBase64(prob.pngBase64, `prob${prob.number}_문제.png`);
+      } else if (prob.contiPngBase64) {
+        downloadBase64(prob.contiPngBase64, `prob${prob.number}_강의노트.png`);
+      }
     },
     [downloadBase64]
   );
@@ -374,25 +389,34 @@ export default function Home() {
   // 4. 전체 ZIP 다운로드
   const handleDownloadAll = useCallback(async () => {
     const doneProblems = problems.filter(
-      (p) => p.status === "done" && p.pngBase64
+      (p) => p.status === "done" && (p.pngBase64 || p.contiPngBase64)
     );
     if (doneProblems.length === 0) return;
 
     // 단일 파일이면 직접 다운로드
     if (doneProblems.length === 1) {
-      downloadBase64(doneProblems[0].pngBase64!, `prob${doneProblems[0].number}_문제.png`);
+      const p = doneProblems[0];
+      const base64 = p.pngBase64 || p.contiPngBase64;
+      const label = p.pngBase64 ? "문제" : "강의노트";
+      downloadBase64(base64!, `prob${p.number}_${label}.png`);
       return;
+    }
+
+    // ZIP 다운로드 — 문제 + 강의노트 모두 포함
+    const files: Array<{ name: string; base64: string }> = [];
+    for (const p of doneProblems) {
+      if (p.pngBase64) {
+        files.push({ name: `prob${p.number}_문제.png`, base64: p.pngBase64 });
+      }
+      if (p.contiPngBase64) {
+        files.push({ name: `prob${p.number}_강의노트.png`, base64: p.contiPngBase64 });
+      }
     }
 
     const res = await fetch("/api/download", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        files: doneProblems.map((p) => ({
-          name: `prob${p.number}_문제.png`,
-          base64: p.pngBase64,
-        })),
-      }),
+      body: JSON.stringify({ files }),
     });
 
     if (!res.ok) return;

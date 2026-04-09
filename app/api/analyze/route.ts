@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeProblemImage } from "@/lib/claude";
+import { generateConti } from "@/lib/conti";
+import { generateContiHtml } from "@/lib/conti-template";
 
 export const maxDuration = 60;
 
@@ -8,6 +10,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get("image") as File | null;
     const numberStr = formData.get("number") as string | null;
+    const itemType = (formData.get("itemType") as string | null) || "problem";
 
     if (!file) {
       return NextResponse.json({ error: "이미지가 없습니다" }, { status: 400 });
@@ -32,10 +35,27 @@ export async function POST(request: NextRequest) {
     const footerText = formData.get("footerText") as string | null;
     const usePro = formData.get("usePro") === "true";
 
+    // 강의노트 파이프라인
+    if (itemType === "lecture-note") {
+      const contiData = await generateConti(base64, mediaType);
+      const contiHtml = generateContiHtml(contiData, {
+        problemNumber: number ?? 1,
+        source: source || undefined,
+      });
+
+      return NextResponse.json({
+        success: true,
+        itemType: "lecture-note",
+        contiHtml,
+      });
+    }
+
+    // 문제 파이프라인 (기본)
     const result = await analyzeProblemImage(base64, mediaType, number, source || undefined, headerText || undefined, footerText || undefined, usePro);
 
     return NextResponse.json({
       success: true,
+      itemType: "problem",
       problemData: result.problemData,
       html: result.html,
     });

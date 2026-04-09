@@ -44,7 +44,7 @@ export default memo(function ProblemCard({
     error: "오류",
   };
 
-  const displayImage = pngBase64 || previewImage;
+  const displayImage = pngBase64 || contiPngBase64 || previewImage;
 
   return (
     <div
