@@ -922,17 +922,16 @@ export default function Home() {
         </div>
       )}
 
-      {/* 액션 버튼들 */}
-      <div
-        style={{
-          display: "flex",
-          gap: "12px",
-          marginTop: "24px",
-          flexWrap: "wrap",
-        }}
-      >
-        {/* 분석 시작 버튼 */}
-        {pendingCount > 0 && phase !== "analyzing" && phase !== "rendering" && (
+      {/* 액션 버튼 — 입력 단계 */}
+      {pendingCount > 0 && phase !== "analyzing" && phase !== "rendering" && (
+        <div
+          style={{
+            display: "flex",
+            gap: "12px",
+            marginTop: "24px",
+            alignItems: "center",
+          }}
+        >
           <button
             onClick={handleStartAnalyze}
             style={{
@@ -949,10 +948,6 @@ export default function Home() {
           >
             분석 시작 ({pendingCount}개)
           </button>
-        )}
-
-        {/* 자동 변환 토글 */}
-        {pendingCount > 0 && phase !== "analyzing" && phase !== "rendering" && (
           <label
             style={{
               display: "flex",
@@ -975,72 +970,79 @@ export default function Home() {
             />
             분석 후 자동 변환
           </label>
-        )}
+        </div>
+      )}
 
-        {/* 확인 후 변환 버튼 (preview 또는 done 상태에서 ready 카드가 있으면 표시) */}
-        {(phase === "preview" || phase === "done") && readyCount > 0 && (
-          <button
-            onClick={handleRender}
-            style={{
-              padding: "12px 28px",
-              borderRadius: "10px",
-              border: "none",
-              background: "linear-gradient(135deg, #f9a825, #e65100)",
-              color: "#fff",
-              fontSize: "16px",
-              fontWeight: 700,
-              cursor: "pointer",
-              boxShadow: "0 4px 16px rgba(249,168,37,0.3)",
-            }}
-          >
-            투명 PNG로 변환 ({readyCount}개)
-          </button>
-        )}
+      {/* 액션 버튼 — 결과 단계 */}
+      {(phase === "preview" || phase === "done") && (
+        <div
+          style={{
+            display: "flex",
+            gap: "12px",
+            marginTop: "12px",
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          {readyCount > 0 && (
+            <button
+              onClick={handleRender}
+              style={{
+                padding: "12px 28px",
+                borderRadius: "10px",
+                border: "none",
+                background: "linear-gradient(135deg, #f9a825, #e65100)",
+                color: "#fff",
+                fontSize: "16px",
+                fontWeight: 700,
+                cursor: "pointer",
+                boxShadow: "0 4px 16px rgba(249,168,37,0.3)",
+              }}
+            >
+              투명 PNG로 변환 ({readyCount}개)
+            </button>
+          )}
 
-        {/* 전체 다운로드 버튼 */}
-        {phase === "done" && doneCount > 0 && (
-          <button
-            onClick={handleDownloadAll}
-            style={{
-              padding: "12px 28px",
-              borderRadius: "10px",
-              border: "none",
-              background: "linear-gradient(135deg, #66bb6a, #388e3c)",
-              color: "#fff",
-              fontSize: "16px",
-              fontWeight: 700,
-              cursor: "pointer",
-              boxShadow: "0 4px 16px rgba(102,187,106,0.3)",
-            }}
-          >
-            {doneCount === 1
-              ? "PNG 다운로드"
-              : `전체 다운로드 (ZIP, ${doneCount}개)`}
-          </button>
-        )}
+          {phase === "done" && doneCount > 0 && (
+            <button
+              onClick={handleDownloadAll}
+              style={{
+                padding: "12px 28px",
+                borderRadius: "10px",
+                border: "none",
+                background: "linear-gradient(135deg, #66bb6a, #388e3c)",
+                color: "#fff",
+                fontSize: "16px",
+                fontWeight: 700,
+                cursor: "pointer",
+                boxShadow: "0 4px 16px rgba(102,187,106,0.3)",
+              }}
+            >
+              {doneCount === 1
+                ? "PNG 다운로드"
+                : `전체 다운로드 (ZIP, ${doneCount}개)`}
+            </button>
+          )}
 
-        {/* 전체 라이브러리 저장 버튼 */}
-        {phase === "done" && doneCount > 0 && doneCount > savedIds.size && (
-          <button
-            onClick={() => setSaveModalTarget("all")}
-            style={{
-              padding: "12px 28px",
-              borderRadius: "10px",
-              border: "none",
-              background: "linear-gradient(135deg, #f9a825, #ff8f00)",
-              color: "#fff",
-              fontSize: "16px",
-              fontWeight: 700,
-              cursor: "pointer",
-              boxShadow: "0 4px 16px rgba(249,168,37,0.3)",
-            }}
-          >
-            전체 라이브러리 저장 ({doneCount - savedIds.size}개)
-          </button>
-        )}
+          {phase === "done" && doneCount > 0 && doneCount > savedIds.size && (
+            <button
+              onClick={() => setSaveModalTarget("all")}
+              style={{
+                padding: "12px 28px",
+                borderRadius: "10px",
+                border: "none",
+                background: "linear-gradient(135deg, #f9a825, #ff8f00)",
+                color: "#fff",
+                fontSize: "16px",
+                fontWeight: 700,
+                cursor: "pointer",
+                boxShadow: "0 4px 16px rgba(249,168,37,0.3)",
+              }}
+            >
+              전체 라이브러리 저장 ({doneCount - savedIds.size}개)
+            </button>
+          )}
 
-        {/* 새로 시작 */}
-        {(phase === "preview" || phase === "done") && (
           <button
             onClick={handleReset}
             style={{
@@ -1056,21 +1058,19 @@ export default function Home() {
           >
             새로 시작
           </button>
-        )}
 
-        {/* 에러 시 재시도 */}
-        {errorCount > 0 && phase === "preview" && (
-          <p
-            style={{
-              fontSize: "13px",
-              color: "rgba(239,83,80,0.8)",
-              alignSelf: "center",
-            }}
-          >
-            {errorCount}개 문제에서 오류가 발생했습니다.
-          </p>
-        )}
-      </div>
+          {errorCount > 0 && phase === "preview" && (
+            <p
+              style={{
+                fontSize: "13px",
+                color: "rgba(239,83,80,0.8)",
+              }}
+            >
+              {errorCount}개 문제에서 오류가 발생했습니다.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* 하단 안내 */}
       <footer
