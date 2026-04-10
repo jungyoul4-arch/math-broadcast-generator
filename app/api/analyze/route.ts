@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeProblemImage } from "@/lib/claude";
-import { generateConti } from "@/lib/conti";
-import { generateContiHtml } from "@/lib/conti-template";
+import { removeBackground } from "@/lib/image-processor";
 
 export const maxDuration = 60;
 
@@ -35,18 +34,20 @@ export async function POST(request: NextRequest) {
     const footerText = formData.get("footerText") as string | null;
     const usePro = formData.get("usePro") === "true";
 
-    // 강의노트 파이프라인
+    // 강의노트 파이프라인 (이미지 배경 제거 → 투명 PNG)
     if (itemType === "lecture-note") {
-      const contiData = await generateConti(base64, mediaType);
-      const contiHtml = generateContiHtml(contiData, {
-        problemNumber: number ?? 1,
-        source: source || undefined,
-      });
+      const imageBuffer = Buffer.from(base64, "base64");
+      const threshold = formData.get("threshold")
+        ? parseInt(formData.get("threshold") as string, 10)
+        : undefined;
+      const result = await removeBackground(imageBuffer, { threshold });
 
       return NextResponse.json({
         success: true,
         itemType: "lecture-note",
-        contiHtml,
+        pngBase64: result.pngBase64,
+        width: result.width,
+        height: result.height,
       });
     }
 

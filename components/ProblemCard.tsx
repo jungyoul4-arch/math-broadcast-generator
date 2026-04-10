@@ -85,7 +85,9 @@ export default memo(function ProblemCard({
       {displayImage && (
         <div
           style={{
-            background: "#0d3b2e",
+            background: status === "done"
+              ? "repeating-conic-gradient(rgba(255,255,255,0.06) 0% 25%, transparent 0% 50%) 50% / 16px 16px"
+              : "#0d3b2e",
             padding: "16px",
             display: "flex",
             justifyContent: "center",
