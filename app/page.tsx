@@ -217,7 +217,7 @@ export default function Home() {
           items.push({ html: p.html, number: p.number, type: "problem" });
         }
         if (p.contiHtml) {
-          items.push({ html: p.contiHtml, number: p.number + 1000, type: "conti" });
+          items.push({ html: p.contiHtml, number: p.number + 100000, type: "conti" });
         }
       }
 
@@ -256,8 +256,8 @@ export default function Home() {
             const result = JSON.parse(data);
             if (result.error) throw new Error(result.error);
 
-            if (result.number >= 1000) {
-              const prob = readyProblems.find((p) => p.number === result.number - 1000);
+            if (result.number >= 100000) {
+              const prob = readyProblems.find((p) => p.number === result.number - 100000);
               if (prob) {
                 const isContiOnly = !prob.html;
                 updateProblem(prob.id, {
@@ -477,8 +477,8 @@ export default function Home() {
     setSavingToLibrary(true);
     try {
       const targetProblems = saveModalTarget === "all"
-        ? problems.filter((p) => p.status === "done" && p.pngBase64 && !savedIds.has(p.id))
-        : problems.filter((p) => p.id === saveModalTarget && p.pngBase64);
+        ? problems.filter((p) => p.status === "done" && (p.pngBase64 || p.contiPngBase64) && !savedIds.has(p.id))
+        : problems.filter((p) => p.id === saveModalTarget && (p.pngBase64 || p.contiPngBase64));
 
       for (const prob of targetProblems) {
         const originalBase64 = prob.file ? await fileToBase64(prob.file) : undefined;
