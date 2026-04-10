@@ -169,7 +169,6 @@ export default function Home() {
             unitName: data.problemData.unitName || "",
             bodyHtml: data.problemData.bodyHtml || "",
             html: data.html,
-            contiHtml: data.contiHtml || undefined,
           });
         }
       } catch (error: unknown) {
@@ -210,7 +209,7 @@ export default function Home() {
   // 2. 미리보기 확인 후 렌더링 시작 (SSE 스트리밍)
   const handleRender = useCallback(async () => {
     const readyProblems = problems.filter(
-      (p) => p.status === "ready" && (p.html || p.contiHtml)
+      (p) => p.status === "ready" && p.html
     );
     if (readyProblems.length === 0) return;
 
