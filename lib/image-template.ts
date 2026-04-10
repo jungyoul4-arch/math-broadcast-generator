@@ -1,17 +1,16 @@
 /**
- * 이미지 래핑 HTML 템플릿 — 강의노트 탭용
- * 원본 이미지를 다크 스타일 템플릿에 삽입하여 Playwright로 투명 PNG 렌더링
+ * 강의노트 HTML 템플릿 — AI가 추출한 텍스트/수식을 다크 스타일로 렌더링
+ * 문제 탭 template.ts와 동일한 스타일 + KaTeX 수식 지원
  */
 
-export interface ImageTemplateOptions {
+export interface LectureNoteTemplateOptions {
   problemNumber: number;
   source?: string;
 }
 
-export function generateImageHtml(
-  imageBase64: string,
-  mediaType: string,
-  options: ImageTemplateOptions
+export function generateLectureNoteHtml(
+  bodyHtml: string,
+  options: LectureNoteTemplateOptions
 ): string {
   const sourceBlock = options.source
     ? `<span class="source-tag">${options.source}</span>`
@@ -23,11 +22,15 @@ export function generateImageHtml(
 <meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
   font-family: 'Noto Sans KR', sans-serif;
   color: #fff;
+  line-height: 1.85;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -78,19 +81,25 @@ body {
   color: #ce93d8;
 }
 
-.image-box {
+.content-box {
   border: 1.5px solid rgba(171,71,188,0.4);
   border-radius: 12px;
   padding: 24px 28px;
   background: transparent;
-  text-align: center;
 }
 
-.image-box img {
-  max-width: 100%;
-  height: auto;
-  filter: invert(1);
+.content-body {
+  font-size: 19px;
+  font-weight: 400;
+  line-height: 2;
 }
+
+.katex, .katex * { color: #fff !important; }
+.katex .mord, .katex .mbin, .katex .mrel,
+.katex .mopen, .katex .mclose, .katex .mpunct,
+.katex .mop, .katex .minner { color: #fff !important; }
+.katex .boxpad { border-color: rgba(255,255,255,0.5) !important; }
+.katex .fbox { border-color: rgba(255,255,255,0.5) !important; }
 </style>
 </head>
 <body>
@@ -101,10 +110,28 @@ body {
     ${sourceBlock}
   </div>
 
-  <div class="image-box">
-    <img src="data:${mediaType};base64,${imageBase64}" alt="강의노트 ${options.problemNumber}" />
+  <div class="content-box">
+    <div class="content-body">
+      ${bodyHtml}
+    </div>
   </div>
 </div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  if (typeof renderMathInElement !== 'undefined') {
+    renderMathInElement(document.body, {
+      delimiters: [
+        {left: "$$", right: "$$", display: true},
+        {left: "$", right: "$", display: false},
+        {left: "\\\\[", right: "\\\\]", display: true},
+        {left: "\\\\(", right: "\\\\)", display: false}
+      ],
+      throwOnError: false
+    });
+  }
+});
+</script>
 </body>
 </html>`;
 }

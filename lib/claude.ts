@@ -810,3 +810,87 @@ export async function analyzeMultipleProblems(
     images.map((img) => analyzeProblemImage(img.base64, img.mediaType, img.number, img.source))
   );
 }
+
+// ─── 강의노트용: 이미지에서 텍스트/수식만 추출 (메타데이터 없음) ───
+
+const EXTRACT_TEXT_PROMPT = `당신은 수학 관련 이미지에서 텍스트와 수식을 정확하게 추출하는 전문가입니다.
+
+## 작업
+사용자가 보낸 이미지(인쇄체, 필기체, 판서 등)에서 모든 텍스트와 수식을 추출하여 HTML+LaTeX로 변환합니다.
+
+## 응답 형식
+반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트를 추가하지 마세요.
+
+\`\`\`json
+{
+  "bodyHtml": "추출된 텍스트와 수식을 HTML+LaTeX로 변환한 결과"
+}
+\`\`\`
+
+## 규칙
+- 이미지의 모든 텍스트를 빠짐없이 추출합니다
+- 한글 텍스트는 HTML로, 수식은 $...$와 $$...$$ LaTeX로 변환합니다
+- 줄바꿈은 <br> 태그로 표현합니다
+- 번호 매기기(①②③ 등)가 있으면 그대로 유지합니다
+- 밑줄, 굵은 글씨 등 서식이 있으면 <u>, <b> 등으로 표현합니다
+- 필기체/손글씨도 최대한 정확하게 인식합니다
+
+## 수식 규칙 (KaTeX용)
+- 인라인 수식: $수식$ (문장 속 수식)
+- 블록 수식: $$수식$$ (독립된 수식)
+- 분수: \\frac{a}{b}
+- 적분: \\int_{a}^{b}
+- 극한: \\lim_{x \\to a} (반드시 \\lim 사용!)
+- 로그: \\log (반드시 \\log 사용!)
+- 삼각함수: \\sin, \\cos, \\tan (반드시 백슬래시!)
+- 조건부 함수: \\begin{cases}...\\end{cases} 환경 필수!
+- 조건부 함수에서 각 조건 사이에 & (정렬) + \\\\ (줄바꿈) 사용
+- lim, log, sin, cos, tan 등은 반드시 \\를 붙여야 합니다!
+- $...$로 감싼 수식 안에 한글을 넣지 마세요. 한글은 수식 밖에!`;
+
+export async function extractTextFromImage(
+  base64: string,
+  mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif"
+): Promise<string> {
+  const client = getClient();
+  const model = client.getGenerativeModel({
+    model: "gemini-3-flash-preview",
+    systemInstruction: EXTRACT_TEXT_PROMPT,
+  });
+
+  const imageContent = {
+    inlineData: { mimeType: mediaType, data: base64 },
+  };
+
+  const result = await model.generateContent([
+    imageContent,
+    { text: "이 이미지에서 모든 텍스트와 수식을 추출하여 HTML+LaTeX로 변환해주세요." },
+  ]);
+
+  const responseText = result.response.text();
+  if (!responseText) throw new Error("Gemini 응답 없음");
+
+  let jsonStr = responseText.trim();
+  const jsonMatch = jsonStr.match(/```json\s*([\s\S]*?)```/);
+  if (jsonMatch) jsonStr = jsonMatch[1].trim();
+
+  const escaped = escapeLatexInJson(jsonStr);
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(escaped);
+  } catch {
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch (e2) {
+      throw new Error(`JSON 파싱 실패: ${(e2 as Error).message}`);
+    }
+  }
+
+  let bodyHtml = (parsed.bodyHtml as string) || "";
+  bodyHtml = fixMathOperators(bodyHtml);
+  bodyHtml = fixDoubleEscapedEnvironments(bodyHtml);
+  bodyHtml = fixPiecewiseFunctions(bodyHtml);
+
+  return bodyHtml;
+}

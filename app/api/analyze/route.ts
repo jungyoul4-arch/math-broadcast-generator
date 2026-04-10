@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { analyzeProblemImage } from "@/lib/claude";
-import { generateImageHtml } from "@/lib/image-template";
+import { analyzeProblemImage, extractTextFromImage } from "@/lib/claude";
+import { generateLectureNoteHtml } from "@/lib/image-template";
 
 export const maxDuration = 60;
 
@@ -34,9 +34,10 @@ export async function POST(request: NextRequest) {
     const footerText = formData.get("footerText") as string | null;
     const usePro = formData.get("usePro") === "true";
 
-    // 강의노트 파이프라인 (원본 이미지를 다크 스타일 HTML에 삽입)
+    // 강의노트 파이프라인 (AI 텍스트/수식 추출 → 다크 스타일 HTML)
     if (itemType === "lecture-note") {
-      const contiHtml = generateImageHtml(base64, mediaType, {
+      const bodyHtml = await extractTextFromImage(base64, mediaType);
+      const contiHtml = generateLectureNoteHtml(bodyHtml, {
         problemNumber: number ?? 1,
         source: source || undefined,
       });
