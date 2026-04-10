@@ -54,11 +54,10 @@ ENV HOSTNAME=0.0.0.0
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
-# serverExternalPackages로 지정된 패키지는 standalone에 포함 안 됨 — 수동 복사
+# playwright 패키지를 standalone node_modules에 병합
+# (serverExternalPackages로 지정된 패키지는 standalone에 포함 안 됨)
 COPY --from=builder /app/node_modules/playwright ./node_modules/playwright
 COPY --from=builder /app/node_modules/playwright-core ./node_modules/playwright-core
-COPY --from=builder /app/node_modules/sharp ./node_modules/sharp
-COPY --from=builder /app/node_modules/@img ./node_modules/@img
 
 # public 폴더 복사
 COPY --from=builder /app/public ./public

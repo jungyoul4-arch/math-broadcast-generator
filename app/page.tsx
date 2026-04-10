@@ -156,9 +156,9 @@ export default function Home() {
 
         if (data.itemType === "lecture-note") {
           updateProblem(prob.id, {
-            status: "done",
+            status: "ready",
             subject: "강의노트",
-            pngBase64: data.pngBase64,
+            contiHtml: data.contiHtml,
           });
         } else {
           updateProblem(prob.id, {
@@ -193,23 +193,13 @@ export default function Home() {
     if (autoRender) {
       autoRenderPending.current = true;
     }
-
-    // 강의노트만 있는 경우 (모두 즉시 done) → done phase로 직접 전환
-    setProblems((prev) => {
-      const allDone = prev.every((p) => p.status === "done" || p.status === "error");
-      if (allDone) {
-        setTimeout(() => setPhase("done"), 0);
-      } else {
-        setTimeout(() => setPhase("preview"), 0);
-      }
-      return prev;
-    });
+    setPhase("preview");
   }, [problems, updateProblem, globalSource, autoRender]);
 
   // 2. 미리보기 확인 후 렌더링 시작 (SSE 스트리밍)
   const handleRender = useCallback(async () => {
     const readyProblems = problems.filter(
-      (p) => p.status === "ready" && p.html
+      (p) => p.status === "ready" && (p.html || p.contiHtml)
     );
     if (readyProblems.length === 0) return;
 
@@ -225,6 +215,9 @@ export default function Home() {
       for (const p of readyProblems) {
         if (p.html) {
           items.push({ html: p.html, number: p.number, type: "problem" });
+        }
+        if (p.contiHtml) {
+          items.push({ html: p.contiHtml, number: p.number + 1000, type: "conti" });
         }
       }
 
@@ -263,13 +256,27 @@ export default function Home() {
             const result = JSON.parse(data);
             if (result.error) throw new Error(result.error);
 
-            const prob = readyProblems.find((p) => p.number === result.number);
-            if (prob) {
-              updateProblem(prob.id, {
-                status: "done",
-                pngBase64: result.pngBase64,
-              });
-              setRenderProgress((prev) => prev + 1);
+            if (result.number >= 1000) {
+              const prob = readyProblems.find((p) => p.number === result.number - 1000);
+              if (prob) {
+                const isContiOnly = !prob.html;
+                updateProblem(prob.id, {
+                  contiPngBase64: result.pngBase64,
+                  ...(isContiOnly ? { status: "done" as const } : {}),
+                });
+                if (isContiOnly) {
+                  setRenderProgress((prev) => prev + 1);
+                }
+              }
+            } else {
+              const prob = readyProblems.find((p) => p.number === result.number);
+              if (prob) {
+                updateProblem(prob.id, {
+                  status: "done",
+                  pngBase64: result.pngBase64,
+                });
+                setRenderProgress((prev) => prev + 1);
+              }
             }
           } catch (e) {
             if (e instanceof Error && e.message !== "렌더링 오류") {
@@ -359,9 +366,20 @@ export default function Home() {
   // 3. 개별 다운로드 (문제 또는 강의노트)
   const handleDownloadProblem = useCallback(
     (prob: ProblemState) => {
-      if (!prob.pngBase64) return;
-      const suffix = prob.itemType === "lecture-note" ? "강의노트" : "문제";
-      downloadBase64(prob.pngBase64, `prob${prob.number}_${suffix}.png`);
+      if (prob.pngBase64) {
+        downloadBase64(prob.pngBase64, `prob${prob.number}_문제.png`);
+      } else if (prob.contiPngBase64) {
+        downloadBase64(prob.contiPngBase64, `prob${prob.number}_강의노트.png`);
+      }
+    },
+    [downloadBase64]
+  );
+
+  // 3-1. 개별 다운로드 (강의노트)
+  const handleDownloadConti = useCallback(
+    (prob: ProblemState) => {
+      if (!prob.contiPngBase64) return;
+      downloadBase64(prob.contiPngBase64, `prob${prob.number}_강의노트.png`);
     },
     [downloadBase64]
   );
@@ -369,15 +387,15 @@ export default function Home() {
   // 4. 전체 ZIP 다운로드
   const handleDownloadAll = useCallback(async () => {
     const doneProblems = problems.filter(
-      (p) => p.status === "done" && p.pngBase64
+      (p) => p.status === "done" && (p.pngBase64 || p.contiPngBase64)
     );
     if (doneProblems.length === 0) return;
 
     // 단일 파일이면 직접 다운로드
     if (doneProblems.length === 1) {
       const p = doneProblems[0];
-      const base64 = p.pngBase64;
-      const label = p.itemType === "lecture-note" ? "강의노트" : "문제";
+      const base64 = p.pngBase64 || p.contiPngBase64;
+      const label = p.pngBase64 ? "문제" : "강의노트";
       downloadBase64(base64!, `prob${p.number}_${label}.png`);
       return;
     }
@@ -386,8 +404,10 @@ export default function Home() {
     const files: Array<{ name: string; base64: string }> = [];
     for (const p of doneProblems) {
       if (p.pngBase64) {
-        const suffix = p.itemType === "lecture-note" ? "강의노트" : "문제";
-        files.push({ name: `prob${p.number}_${suffix}.png`, base64: p.pngBase64 });
+        files.push({ name: `prob${p.number}_문제.png`, base64: p.pngBase64 });
+      }
+      if (p.contiPngBase64) {
+        files.push({ name: `prob${p.number}_강의노트.png`, base64: p.contiPngBase64 });
       }
     }
 
@@ -604,7 +624,7 @@ export default function Home() {
           <ProgressBar
             current={analyzeProgress}
             total={problems.length}
-            label="Claude API로 문제 분석 중..."
+            label={uploadMode === "lecture-note" ? "강의노트 이미지 처리 중..." : "Claude API로 문제 분석 중..."}
           />
         </div>
       )}
@@ -841,22 +861,41 @@ export default function Home() {
                   >
                     {prob.itemType === "lecture-note" ? "PNG" : "문제"}
                   </button>
-                  <button
-                    onClick={() => handleRegeneratePro(prob)}
-                    style={{
-                      background: "rgba(124,77,255,0.7)",
-                      border: "1px solid rgba(124,77,255,0.5)",
-                      borderRadius: "8px",
-                      color: "#fff",
-                      padding: "4px 10px",
-                      fontSize: "11px",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      backdropFilter: "blur(4px)",
-                    }}
-                  >
-                    재분석
-                  </button>
+                  {prob.contiPngBase64 && (
+                    <button
+                      onClick={() => handleDownloadConti(prob)}
+                      style={{
+                        background: "rgba(124,77,255,0.6)",
+                        border: "1px solid rgba(124,77,255,0.4)",
+                        borderRadius: "8px",
+                        color: "#fff",
+                        padding: "4px 10px",
+                        fontSize: "11px",
+                        cursor: "pointer",
+                        backdropFilter: "blur(4px)",
+                      }}
+                    >
+                      강의노트
+                    </button>
+                  )}
+                  {prob.itemType !== "lecture-note" && (
+                    <button
+                      onClick={() => handleRegeneratePro(prob)}
+                      style={{
+                        background: "rgba(124,77,255,0.7)",
+                        border: "1px solid rgba(124,77,255,0.5)",
+                        borderRadius: "8px",
+                        color: "#fff",
+                        padding: "4px 10px",
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        backdropFilter: "blur(4px)",
+                      }}
+                    >
+                      재분석
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       if (confirm(`문제 ${prob.number}번을 삭제하시겠습니까?`)) {
