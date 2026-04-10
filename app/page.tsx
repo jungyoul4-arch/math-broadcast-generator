@@ -806,7 +806,7 @@ export default function Home() {
                 </button>
               )}
               {/* 개별 다운로드 + 저장 + 삭제 버튼들 */}
-              {prob.status === "done" && prob.pngBase64 && (
+              {prob.status === "done" && (prob.pngBase64 || prob.contiPngBase64) && (
                 <div style={{
                   position: "absolute",
                   top: "8px",
