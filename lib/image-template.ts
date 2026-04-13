@@ -6,12 +6,17 @@
 export interface LectureNoteTemplateOptions {
   problemNumber: number;
   source?: string;
+  showHeader?: boolean;   // 번호 배지 + "강의노트" 라벨 표시 (기본값: false)
+  showBorder?: boolean;   // content-box 테두리 표시 (기본값: false)
 }
 
 export function generateLectureNoteHtml(
   bodyHtml: string,
   options: LectureNoteTemplateOptions
 ): string {
+  const showHeader = options.showHeader ?? false;
+  const showBorder = options.showBorder ?? false;
+
   const sourceBlock = options.source
     ? `<span class="source-tag">${options.source}</span>`
     : "";
@@ -82,7 +87,7 @@ body {
 }
 
 .content-box {
-  border: 1.5px solid rgba(171,71,188,0.4);
+  border: ${showBorder ? '1.5px solid rgba(171,71,188,0.4)' : 'none'};
   border-radius: 12px;
   padding: 24px 28px;
   background: transparent;
@@ -104,11 +109,11 @@ body {
 </head>
 <body>
 <div class="problem-container">
-  <div class="problem-header">
+  ${showHeader ? `<div class="problem-header">
     <span class="problem-number">${options.problemNumber}</span>
     <span class="tag lecture-tag">강의노트</span>
     ${sourceBlock}
-  </div>
+  </div>` : ''}
 
   <div class="content-box">
     <div class="content-body">
