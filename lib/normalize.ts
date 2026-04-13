@@ -53,7 +53,7 @@ function renderOne(latex: string, displayMode: boolean): string {
     if (!needsDisplay) {
       processedLatex = processedLatex.replace(
         /\\(lim|sum|prod|bigcap|bigcup)\s*_/g,
-        "\\displaystyle\\$1_"
+        "\\$1\\limits_"
       );
     }
     return katex.renderToString(processedLatex, {
