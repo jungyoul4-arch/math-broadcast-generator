@@ -8,6 +8,8 @@ export interface LectureNoteTemplateOptions {
   source?: string;
   showHeader?: boolean;   // 번호 배지 + "강의노트" 라벨 표시 (기본값: false)
   showBorder?: boolean;   // content-box 테두리 표시 (기본값: false)
+  diagramPngBase64?: string;                    // 도형 PNG (base64)
+  diagramLayout?: "single" | "wide" | "multi";  // 도형 레이아웃
 }
 
 export function generateLectureNoteHtml(
@@ -19,6 +21,12 @@ export function generateLectureNoteHtml(
 
   const sourceBlock = options.source
     ? `<span class="source-tag">${options.source}</span>`
+    : "";
+
+  const layoutClass = options.diagramLayout === "multi" ? "diagram-multi"
+    : options.diagramLayout === "wide" ? "diagram-wide" : "diagram-single";
+  const diagramBlock = options.diagramPngBase64
+    ? `<div class="diagram-area ${layoutClass}"><img src="data:image/png;base64,${options.diagramPngBase64}" alt="도형" class="diagram-img" /></div>`
     : "";
 
   return `<!DOCTYPE html>
@@ -99,6 +107,12 @@ body {
   line-height: 2;
 }
 
+.diagram-area { margin: 20px auto 16px; text-align: center; }
+.diagram-single { max-width: 55%; }
+.diagram-wide { max-width: 75%; }
+.diagram-multi { max-width: 90%; }
+.diagram-img { max-width: 100%; height: auto; }
+
 .katex, .katex * { color: #fff !important; }
 .katex .mord, .katex .mbin, .katex .mrel,
 .katex .mopen, .katex .mclose, .katex .mpunct,
@@ -119,6 +133,7 @@ body {
     <div class="content-body">
       ${bodyHtml}
     </div>
+    ${diagramBlock}
   </div>
 </div>
 

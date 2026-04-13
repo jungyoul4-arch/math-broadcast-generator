@@ -11,7 +11,7 @@ const DEBUG = process.env.MBG_DEBUG === "true";
 // ─── Gemini 클라이언트 싱글턴 ───
 let _geminiClient: InstanceType<typeof GoogleGenerativeAI> | null = null;
 
-function getClient(): InstanceType<typeof GoogleGenerativeAI> {
+export function getClient(): InstanceType<typeof GoogleGenerativeAI> {
   if (_geminiClient) return _geminiClient;
 
   let key = process.env.GEMINI_API_KEY;
@@ -525,7 +525,7 @@ export interface AnalysisResult {
 /**
  * Step 0: Flash로 도형 유무만 빠르게 판별 (0.5~1초)
  */
-async function detectDiagram(
+export async function detectDiagram(
   client: InstanceType<typeof GoogleGenerativeAI>,
   imageContent: { inlineData: { mimeType: string; data: string } }
 ): Promise<boolean> {
@@ -621,7 +621,7 @@ async function analyzeText(
  * TikZ 코드 생성 (코드블록 응답 — JSON 이스케이프 문제 없음)
  * tier: "flash" (빠름, 기본) | "pro" (정확, 재생성용)
  */
-async function generateTikz(
+export async function generateTikz(
   client: InstanceType<typeof GoogleGenerativeAI>,
   imageContent: { inlineData: { mimeType: string; data: string } },
   tier: "flash" | "pro" = "flash"
