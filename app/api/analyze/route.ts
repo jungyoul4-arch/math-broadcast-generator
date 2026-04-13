@@ -46,6 +46,19 @@ export async function POST(request: NextRequest) {
         detectDiagram(client, imageContent),
       ]);
 
+      // 도형 감지 시: 그래프 라벨만 있으면 bodyHtml 비움, 완성된 수식/한글이 있으면 유지
+      let finalBodyHtml = bodyHtml;
+      if (hasDiagramDetected) {
+        const plainText = bodyHtml.replace(/<[^>]*>/g, "").trim();
+        const hasKorean = /[가-힣]/.test(plainText);
+        const hasCompleteFormula = /\\(lim|sum|int|frac|begin|leq|geq|neq|approx|equiv)\b/.test(plainText)
+          || /\$[^$]{15,}\$/.test(plainText);
+        if (!hasKorean && !hasCompleteFormula) {
+          console.log("강의노트: 그래프 라벨만 감지 → bodyHtml 비움");
+          finalBodyHtml = "";
+        }
+      }
+
       // Phase 2: 도형 있으면 TikZ 생성 + 렌더링
       let diagramPngBase64: string | undefined;
       let diagramLayout: "single" | "wide" | "multi" = "single";
@@ -67,7 +80,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const contiHtml = generateLectureNoteHtml(bodyHtml, {
+      const contiHtml = generateLectureNoteHtml(finalBodyHtml, {
         problemNumber: number ?? 1,
         source: source || undefined,
         diagramPngBase64,
