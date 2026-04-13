@@ -46,9 +46,17 @@ function renderOne(latex: string, displayMode: boolean): string {
   try {
     // cases/aligned 등 환경은 inline이라도 display mode로 렌더링 (줄바꿈 필수)
     const needsDisplay = displayMode
-      || /\\begin\{(cases|aligned|array|pmatrix|bmatrix|vmatrix)\}/.test(latex)
-      || /\\lim\s*[_{}]/.test(latex);
-    return katex.renderToString(latex, {
+      || /\\begin\{(cases|aligned|array|pmatrix|bmatrix|vmatrix)\}/.test(latex);
+    // inline 대형 연산자(lim, sum, prod, bigcap, bigcup)에 아래/위첨자가 있으면
+    // \displaystyle을 국소 주입하여 첨자를 위/아래로 배치 (블록 가운데정렬 없음)
+    let processedLatex = latex;
+    if (!needsDisplay) {
+      processedLatex = processedLatex.replace(
+        /\\(lim|sum|prod|bigcap|bigcup)\s*_/g,
+        "\\displaystyle\\$1_"
+      );
+    }
+    return katex.renderToString(processedLatex, {
       displayMode: needsDisplay,
       throwOnError: false,
       errorColor: DEBUG ? "#ff0000" : "#ff6b6b",
