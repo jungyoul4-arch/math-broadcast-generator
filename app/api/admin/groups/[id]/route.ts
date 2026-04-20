@@ -20,20 +20,20 @@ export async function PATCH(
 
   // 멤버 추가
   if (body.addMember) {
-    const group = addMemberToGroup(id, body.addMember);
+    const group = await addMemberToGroup(id, body.addMember);
     if (!group) return NextResponse.json({ error: "그룹 없음" }, { status: 404 });
     return NextResponse.json({ success: true, group });
   }
 
   // 멤버 제거
   if (body.removeMember) {
-    const group = removeMemberFromGroup(id, body.removeMember);
+    const group = await removeMemberFromGroup(id, body.removeMember);
     if (!group) return NextResponse.json({ error: "그룹 없음" }, { status: 404 });
     return NextResponse.json({ success: true, group });
   }
 
   // 이름/설명 수정
-  const group = updateGroup(id, { name: body.name, description: body.description });
+  const group = await updateGroup(id, { name: body.name, description: body.description });
   if (!group) return NextResponse.json({ error: "그룹 없음" }, { status: 404 });
   return NextResponse.json({ success: true, group });
 }
@@ -46,7 +46,7 @@ export async function DELETE(
   if (!(await requireAdmin())) return NextResponse.json({ error: "권한 없음" }, { status: 403 });
 
   const { id } = await params;
-  const deleted = deleteGroup(id);
+  const deleted = await deleteGroup(id);
   if (!deleted) return NextResponse.json({ error: "그룹 없음" }, { status: 404 });
   return NextResponse.json({ success: true });
 }

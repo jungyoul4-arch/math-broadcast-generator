@@ -51,7 +51,9 @@ export async function POST(request: NextRequest) {
       if (hasDiagramDetected) {
         const plainText = bodyHtml.replace(/<[^>]*>/g, "").trim();
         const hasKorean = /[가-힣]/.test(plainText);
-        const hasCompleteFormula = /\\(lim|sum|int|frac|begin|leq|geq|neq|approx|equiv)\b/.test(plainText)
+        // 자주 쓰이는 수식 명령어 전반을 커버 (누락 시 본문이 통째로 비워지는 버그 방지)
+        const hasCompleteFormula =
+          /\\(lim|sum|int|frac|dfrac|tfrac|begin|leq|geq|neq|approx|equiv|log|ln|exp|sin|cos|tan|sec|csc|cot|sqrt|cdot|times|div|pm|infty|partial|nabla|forall|exists|in|subset|supset|cup|cap|pi|alpha|beta|gamma|theta|phi|lambda|mu|sigma|omega|Delta|Sigma|Omega)(?![a-zA-Z])/.test(plainText)
           || /\$[^$]{15,}\$/.test(plainText);
         if (!hasKorean && !hasCompleteFormula) {
           console.log("강의노트: 그래프 라벨만 감지 → bodyHtml 비움");
@@ -91,6 +93,7 @@ export async function POST(request: NextRequest) {
         success: true,
         itemType: "lecture-note",
         contiHtml,
+        hasDiagram: hasDiagramDetected,
       });
     }
 
@@ -102,6 +105,8 @@ export async function POST(request: NextRequest) {
       itemType: "problem",
       problemData: result.problemData,
       html: result.html,
+      // problemData.hasDiagram 필드는 Gemini가 직접 판정
+      hasDiagram: result.problemData?.hasDiagram === true,
     });
   } catch (error: unknown) {
     const message =

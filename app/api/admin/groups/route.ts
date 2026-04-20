@@ -22,6 +22,6 @@ export async function POST(request: NextRequest) {
   const { name, description } = await request.json();
   if (!name) return NextResponse.json({ error: "그룹 이름 필요" }, { status: 400 });
 
-  const group = createGroup({ name, description, createdBy: admin.userId });
+  const group = await createGroup({ name, description, createdBy: admin.userId });
   return NextResponse.json({ success: true, group });
 }

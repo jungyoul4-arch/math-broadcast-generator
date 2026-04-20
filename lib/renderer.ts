@@ -17,6 +17,29 @@ const MAX_PAGES = 8; // 컨텍스트 내 최대 동시 페이지 수
 const KATEX_TIMEOUT = 8000; // KaTeX 로딩 최대 대기
 let _openPages = 0;
 
+// ─── 페이지 세마포어 (원자적 check-and-increment + 대기 큐) ───
+// check-then-increment 비원자성으로 인한 race 방지
+const _pageQueue: Array<() => void> = [];
+
+async function acquirePage(): Promise<void> {
+  if (_openPages < MAX_PAGES) {
+    _openPages++;
+    return;
+  }
+  return new Promise<void>((resolve) => {
+    _pageQueue.push(() => {
+      _openPages++;
+      resolve();
+    });
+  });
+}
+
+function releasePage(): void {
+  _openPages--;
+  const next = _pageQueue.shift();
+  if (next) next();
+}
+
 // ─── KaTeX 자원 로컬 캐시 (모듈 로드 시 1회 읽기) ───
 let _katexCss: string | null = null;
 let _katexJs: string | null = null;
@@ -138,16 +161,13 @@ async function renderSingle(
   html: string,
   number: number
 ): Promise<RenderResult> {
-  if (_openPages >= MAX_PAGES) {
-    throw new Error(`문제 ${number}: 동시 페이지 한도 초과 (${MAX_PAGES})`);
-  }
-  _openPages++;
+  await acquirePage();
   const context = await getContext(browser);
   let page;
   try {
     page = await context.newPage();
   } catch (e) {
-    _openPages--;
+    releasePage();
     throw e;
   }
 
@@ -188,7 +208,7 @@ async function renderSingle(
       height: box ? Math.round(box.height * 2) : 1600,
     };
   } finally {
-    _openPages--;
+    releasePage();
     await page.close().catch(() => {});
   }
 }
@@ -239,17 +259,14 @@ export async function renderMultipleStreaming(
  * 싱글턴 브라우저 재사용
  */
 export async function renderPreview(html: string): Promise<Buffer> {
-  if (_openPages >= MAX_PAGES) {
-    throw new Error("미리보기: 동시 페이지 한도 초과");
-  }
-  _openPages++;
+  await acquirePage();
   const browser = await getBrowser();
   const context = await getContext(browser);
   let page;
   try {
     page = await context.newPage();
   } catch (e) {
-    _openPages--;
+    releasePage();
     throw e;
   }
 
@@ -284,7 +301,7 @@ export async function renderPreview(html: string): Promise<Buffer> {
 
     return pngBuffer;
   } finally {
-    _openPages--;
+    releasePage();
     await page.close().catch(() => {});
   }
 }

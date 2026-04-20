@@ -29,6 +29,12 @@ export function generateLectureNoteHtml(
     ? `<div class="diagram-area ${layoutClass}"><img src="data:image/png;base64,${options.diagramPngBase64}" alt="도형" class="diagram-img" /></div>`
     : "";
 
+  // 본문이 공백/태그만 있는 경우 .content-body 자체를 생략 (Playwright boundingBox height=0 방지)
+  const bodyIsEmpty = bodyHtml.replace(/<[^>]*>/g, "").trim().length === 0;
+  const contentBodyBlock = bodyIsEmpty
+    ? ""
+    : `<div class="content-body">\n      ${bodyHtml}\n    </div>`;
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -130,9 +136,7 @@ body {
   </div>` : ''}
 
   <div class="content-box">
-    <div class="content-body">
-      ${bodyHtml}
-    </div>
+    ${contentBodyBlock}
     ${diagramBlock}
   </div>
 </div>

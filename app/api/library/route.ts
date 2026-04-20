@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "변환된 PNG가 필요합니다" }, { status: 400 });
     }
 
-    const saved = saveProblem(session.userId, {
+    const saved = await saveProblem(session.userId, {
       itemType: body.itemType || "problem",
       linkedProblemNumber: body.linkedProblemNumber,
       subject: body.subject || "",
@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
       contiPngBase64: body.contiPngBase64,
       html: body.html || "",
       contiHtml: body.contiHtml,
+      hasDiagram: body.hasDiagram === true,
     });
 
     return NextResponse.json({ success: true, problem: saved });

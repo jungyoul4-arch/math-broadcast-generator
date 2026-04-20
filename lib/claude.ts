@@ -5,6 +5,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { generateProblemHtml, type ProblemData } from "./template";
 import { renderTikzToPng } from "./tikz-renderer";
+import { normalizeMathBlock } from "./normalize";
 
 const DEBUG = process.env.MBG_DEBUG === "true";
 
@@ -354,14 +355,50 @@ function fixMathOperators(html: string): string {
   const unescapedOpRegex = new RegExp(`(?<!\\\\)(?<![a-zA-Z])(${opsPattern})(?![a-zA-Z])`, "g");
   const doubleEscapedOpRegex = new RegExp(`\\\\\\\\(${opsPattern})(?![a-zA-Z])`, "g");
 
+  // 텍스트 블록(\text{...}, \mathrm{...}, \mathbf{...} 등)을 플레이스홀더로 마스킹
+  // → 연산자 regex가 텍스트 내부의 한글/영단어("in defined" 같은)를 건드리지 않도록
+  // 중첩 중괄호 균형 고려 (깊이 카운트로 올바른 닫는 `}` 찾기)
+  const maskTextBlocks = (s: string): { masked: string; blocks: string[] } => {
+    const blocks: string[] = [];
+    const cmdRegex = /\\(?:text|mathrm|mathbf|mathit|mathbb|textbf|textit|operatorname)\{/g;
+    let out = "";
+    let lastIdx = 0;
+    let m: RegExpExecArray | null;
+    while ((m = cmdRegex.exec(s)) !== null) {
+      const start = m.index;
+      const openIdx = start + m[0].length - 1; // `{` 위치
+      // 중괄호 균형 맞추기
+      let depth = 1;
+      let i = openIdx + 1;
+      while (i < s.length && depth > 0) {
+        const ch = s[i];
+        if (ch === "\\") { i += 2; continue; } // 이스케이프 스킵
+        if (ch === "{") depth++;
+        else if (ch === "}") depth--;
+        i++;
+      }
+      if (depth !== 0) break; // 짝 안 맞으면 포기
+      const full = s.slice(start, i);
+      blocks.push(full);
+      out += s.slice(lastIdx, start) + `\x00TEXT${blocks.length - 1}\x00`;
+      lastIdx = i;
+      cmdRegex.lastIndex = i;
+    }
+    out += s.slice(lastIdx);
+    return { masked: out, blocks };
+  };
+
+  const restoreTextBlocks = (s: string, blocks: string[]): string =>
+    s.replace(/\x00TEXT(\d+)\x00/g, (_, idx) => blocks[Number(idx)]);
+
   let result = html.replace(/\$\$[\s\S]*?\$\$|\$[^$]+?\$/g, (match) => {
-    let fixed = match;
-    // 한 번의 regex로 모든 연산자 매칭 + 백슬래시 추가
+    // 텍스트 블록 마스킹 → 연산자 변환 → 복원
+    const { masked, blocks } = maskTextBlocks(match);
+    let fixed = masked;
     fixed = fixed.replace(unescapedOpRegex, "\\$1");
     fixed = fixed.replace(/->/g, "\\to");
-    // 이중 백슬래시 수리 (\\op → \op) — 역시 한 번의 regex로
     fixed = fixed.replace(doubleEscapedOpRegex, "\\$1");
-    return fixed;
+    return restoreTextBlocks(fixed, blocks);
   });
 
   return result;
@@ -371,29 +408,11 @@ function fixMathOperators(html: string): string {
  * LaTeX 환경(\begin, \end)의 이중 이스케이프 수리
  * Gemini가 이스케이프 수준을 일관되지 않게 보내면
  * JSON 파싱 후 \\begin{cases} (이중 백슬래시)가 남아 KaTeX 실패
+ *
+ * 실제 정규화 로직은 lib/normalize.ts의 normalizeMathBlock 단일 소스 사용
+ * (cases 환경 내부/외부 분기 규칙 포함)
  */
 function fixDoubleEscapedEnvironments(html: string): string {
-  // $$ 블록 안의 백슬래시를 KaTeX 표준으로 일괄 정규화
-  // Gemini가 매번 다른 수준으로 이스케이프하므로, 특정 패턴이 아닌 모든 경우를 처리
-  //
-  // KaTeX 표준:
-  //   \command  = 백슬래시 1개 + 명령어 (예: \begin, \geq, \frac)
-  //   \\        = 백슬래시 2개 (줄바꿈, cases 환경 등)
-  //
-  // 정규화 규칙:
-  //   백슬래시 2개 이상 + 영문자 → 백슬래시 1개 + 영문자 (명령어)
-  //   백슬래시 3개 이상 + 비영문자 → 백슬래시 2개 (줄바꿈)
-  //   백슬래시 정확히 2개 + 비영문자 → 그대로 유지 (이미 올바른 줄바꿈)
-  //   백슬래시 1개 + 영문자 → 그대로 유지 (이미 올바른 명령어)
-  const normalizeMathBlock = (inner: string): string => {
-    let fixed = inner;
-    // 2개 이상 연속 백슬래시 + 영문자 → 1개 백슬래시 + 영문자 (명령어 정규화)
-    fixed = fixed.replace(/\\{2,}([a-zA-Z])/g, "\\$1");
-    // 3개 이상 연속 백슬래시 + 비영문자(또는 끝) → 2개 백슬래시 (줄바꿈 정규화)
-    fixed = fixed.replace(/\\{3,}(?=[^a-zA-Z]|$)/g, "\\\\");
-    return fixed;
-  };
-
   // 블록 수식 $$...$$ 처리
   let result = html.replace(/\$\$([\s\S]*?)\$\$/g, (_, inner: string) => {
     return `$$${normalizeMathBlock(inner)}$$`;
@@ -447,8 +466,8 @@ function fixPiecewiseFunctions(html: string): string {
     fixed = fixed.replace(/=\s*\\\{/, "= \\begin{cases}");
 
     // Step 2: 닫는 중괄호를 \end{cases}로 교체
-    // \right\}, \right., \} 패턴
-    fixed = fixed.replace(/\\right\s*\\\}?\s*$/, "\\end{cases}");
+    // `\right\}` / `\right.` 패턴만 정확히 매칭 (optional `?` 제거해 `\right` 단독 오매칭 방지)
+    fixed = fixed.replace(/\\right\s*\\\}\s*$/, "\\end{cases}");
     fixed = fixed.replace(/\\right\s*\.\s*$/, "\\end{cases}");
     // 마지막 \} 제거 (cases 닫는 중괄호)
     if (!fixed.includes("\\end{cases}")) {
@@ -806,9 +825,19 @@ export async function analyzeMultipleProblems(
     source?: string;
   }>
 ): Promise<AnalysisResult[]> {
-  return Promise.all(
-    images.map((img) => analyzeProblemImage(img.base64, img.mediaType, img.number, img.source))
-  );
+  // 청크 기반 동시성 제한 (renderTikzToPng 내부 세마포어와 조합되어 안전)
+  const CONCURRENCY = Number(process.env.ANALYZE_CONCURRENCY || 4);
+  const results: AnalysisResult[] = [];
+  for (let i = 0; i < images.length; i += CONCURRENCY) {
+    const chunk = images.slice(i, i + CONCURRENCY);
+    const chunkResults = await Promise.all(
+      chunk.map((img) =>
+        analyzeProblemImage(img.base64, img.mediaType, img.number, img.source)
+      )
+    );
+    results.push(...chunkResults);
+  }
+  return results;
 }
 
 // ─── 강의노트용: 이미지에서 텍스트/수식만 추출 (메타데이터 없음) ───

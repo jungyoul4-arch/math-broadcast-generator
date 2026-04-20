@@ -10,3 +10,6 @@ output/*.png
 output/
 .claude/
 data/
+
+# Graphify
+graphify-out/

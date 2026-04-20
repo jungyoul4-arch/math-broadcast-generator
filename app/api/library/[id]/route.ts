@@ -44,7 +44,7 @@ export async function PATCH(
     return NextResponse.json({ error: "tags 배열 필요" }, { status: 400 });
   }
 
-  const updated = updateProblemTags(session.userId, id, body.tags);
+  const updated = await updateProblemTags(session.userId, id, body.tags);
   if (!updated) return NextResponse.json({ error: "문제 없음 (본인 문제만 수정 가능)" }, { status: 404 });
   return NextResponse.json({ success: true, problem: updated });
 }
@@ -58,7 +58,7 @@ export async function DELETE(
   if (!session) return NextResponse.json({ error: "로그인 필요" }, { status: 401 });
 
   const { id } = await params;
-  const deleted = deleteProblem(session.userId, id);
+  const deleted = await deleteProblem(session.userId, id);
   if (!deleted) return NextResponse.json({ error: "문제 없음 (본인 문제만 삭제 가능)" }, { status: 404 });
   return NextResponse.json({ success: true });
 }

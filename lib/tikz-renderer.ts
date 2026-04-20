@@ -13,11 +13,38 @@ const execAsync = promisify(exec);
 const LATEX_PATH = process.env.LATEX_PATH || (process.platform === "linux" ? "/usr/bin" : "/Library/TeX/texbin");
 const GS_PATH = process.env.GS_PATH || (process.platform === "linux" ? "/usr/bin/gs" : "/opt/homebrew/bin/gs");
 
+// ─── XeLaTeX 동시성 제한 (Railway 1GB 환경에서 OOM 방지) ───
+// 클라이언트가 /api/analyze를 10개 병렬로 호출해도 서버에서 xelatex 프로세스를
+// 4개까지만 동시 실행하도록 게이트. 대기 중인 요청은 큐에서 순차 처리.
+const TIKZ_CONCURRENCY = Number(process.env.TIKZ_CONCURRENCY || 4);
+let _activeTikz = 0;
+const _tikzQueue: Array<() => void> = [];
+
+async function acquireTikzSlot(): Promise<void> {
+  if (_activeTikz < TIKZ_CONCURRENCY) {
+    _activeTikz++;
+    return;
+  }
+  return new Promise<void>((resolve) => {
+    _tikzQueue.push(() => {
+      _activeTikz++;
+      resolve();
+    });
+  });
+}
+
+function releaseTikzSlot(): void {
+  _activeTikz--;
+  const next = _tikzQueue.shift();
+  if (next) next();
+}
+
 /**
  * TikZ 코드를 투명 배경 PNG base64로 변환
  * XeLaTeX + 나눔명조 사용 (수능문제 프롬프트 가이드 사양)
  */
 export async function renderTikzToPng(tikzCode: string): Promise<string> {
+  await acquireTikzSlot();
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "tikz-"));
   const texFile = path.join(tmpDir, "diagram.tex");
   const pdfFile = path.join(tmpDir, "diagram.pdf");
@@ -82,5 +109,6 @@ ${tikzCode}
     try {
       await fs.rm(tmpDir, { recursive: true, force: true });
     } catch {}
+    releaseTikzSlot();
   }
 }

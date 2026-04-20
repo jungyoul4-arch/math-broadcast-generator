@@ -5,6 +5,7 @@
 import fs from "fs";
 import path from "path";
 import { setUserGroup } from "./users";
+import { withFileLock, atomicWriteSync } from "./fs-utils";
 
 export interface Group {
   id: string;
@@ -34,7 +35,7 @@ function readGroups(): GroupsIndex {
 
 function writeGroups(index: GroupsIndex) {
   ensureDir();
-  fs.writeFileSync(GROUPS_PATH, JSON.stringify(index, null, 2), "utf-8");
+  atomicWriteSync(GROUPS_PATH, JSON.stringify(index, null, 2));
 }
 
 function generateId(): string {
@@ -57,90 +58,100 @@ export function getGroupByUserId(userId: string): Group | null {
 }
 
 /** 그룹 생성 */
-export function createGroup(input: {
+export async function createGroup(input: {
   name: string;
   description?: string;
   createdBy: string;
-}): Group {
-  const index = readGroups();
-  const group: Group = {
-    id: generateId(),
-    name: input.name,
-    description: input.description,
-    memberIds: [],
-    createdAt: new Date().toISOString(),
-    createdBy: input.createdBy,
-  };
-  index.groups.push(group);
-  writeGroups(index);
-  return group;
+}): Promise<Group> {
+  return withFileLock(GROUPS_PATH, () => {
+    const index = readGroups();
+    const group: Group = {
+      id: generateId(),
+      name: input.name,
+      description: input.description,
+      memberIds: [],
+      createdAt: new Date().toISOString(),
+      createdBy: input.createdBy,
+    };
+    index.groups.push(group);
+    writeGroups(index);
+    return group;
+  });
 }
 
-/** 그룹에 멤버 추가 */
-export function addMemberToGroup(groupId: string, userId: string): Group | null {
-  const index = readGroups();
-  const group = index.groups.find((g) => g.id === groupId);
-  if (!group) return null;
+/** 그룹에 멤버 추가 (groups.json과 users.json 양쪽 업데이트) */
+export async function addMemberToGroup(groupId: string, userId: string): Promise<Group | null> {
+  return withFileLock(GROUPS_PATH, async () => {
+    const index = readGroups();
+    const group = index.groups.find((g) => g.id === groupId);
+    if (!group) return null;
 
-  // 다른 그룹에서 제거
-  for (const g of index.groups) {
-    if (g.id !== groupId) {
-      const idx = g.memberIds.indexOf(userId);
-      if (idx !== -1) {
-        g.memberIds.splice(idx, 1);
+    // 다른 그룹에서 제거
+    for (const g of index.groups) {
+      if (g.id !== groupId) {
+        const idx = g.memberIds.indexOf(userId);
+        if (idx !== -1) {
+          g.memberIds.splice(idx, 1);
+        }
       }
     }
-  }
 
-  if (!group.memberIds.includes(userId)) {
-    group.memberIds.push(userId);
-  }
+    if (!group.memberIds.includes(userId)) {
+      group.memberIds.push(userId);
+    }
 
-  writeGroups(index);
-  setUserGroup(userId, groupId);
-  return group;
+    writeGroups(index);
+    await setUserGroup(userId, groupId);
+    return group;
+  });
 }
 
 /** 그룹에서 멤버 제거 */
-export function removeMemberFromGroup(groupId: string, userId: string): Group | null {
-  const index = readGroups();
-  const group = index.groups.find((g) => g.id === groupId);
-  if (!group) return null;
+export async function removeMemberFromGroup(groupId: string, userId: string): Promise<Group | null> {
+  return withFileLock(GROUPS_PATH, async () => {
+    const index = readGroups();
+    const group = index.groups.find((g) => g.id === groupId);
+    if (!group) return null;
 
-  group.memberIds = group.memberIds.filter((id) => id !== userId);
-  writeGroups(index);
-  setUserGroup(userId, undefined);
-  return group;
+    group.memberIds = group.memberIds.filter((id) => id !== userId);
+    writeGroups(index);
+    await setUserGroup(userId, undefined);
+    return group;
+  });
 }
 
 /** 그룹 수정 */
-export function updateGroup(
+export async function updateGroup(
   id: string,
   updates: { name?: string; description?: string }
-): Group | null {
-  const index = readGroups();
-  const group = index.groups.find((g) => g.id === id);
-  if (!group) return null;
+): Promise<Group | null> {
+  return withFileLock(GROUPS_PATH, () => {
+    const index = readGroups();
+    const group = index.groups.find((g) => g.id === id);
+    if (!group) return null;
 
-  if (updates.name !== undefined) group.name = updates.name;
-  if (updates.description !== undefined) group.description = updates.description;
+    if (updates.name !== undefined) group.name = updates.name;
+    if (updates.description !== undefined) group.description = updates.description;
 
-  writeGroups(index);
-  return group;
+    writeGroups(index);
+    return group;
+  });
 }
 
 /** 그룹 삭제 (멤버들의 groupId도 해제) */
-export function deleteGroup(id: string): boolean {
-  const index = readGroups();
-  const idx = index.groups.findIndex((g) => g.id === id);
-  if (idx === -1) return false;
+export async function deleteGroup(id: string): Promise<boolean> {
+  return withFileLock(GROUPS_PATH, async () => {
+    const index = readGroups();
+    const idx = index.groups.findIndex((g) => g.id === id);
+    if (idx === -1) return false;
 
-  const group = index.groups[idx];
-  for (const memberId of group.memberIds) {
-    setUserGroup(memberId, undefined);
-  }
+    const group = index.groups[idx];
+    for (const memberId of group.memberIds) {
+      await setUserGroup(memberId, undefined);
+    }
 
-  index.groups.splice(idx, 1);
-  writeGroups(index);
-  return true;
+    index.groups.splice(idx, 1);
+    writeGroups(index);
+    return true;
+  });
 }

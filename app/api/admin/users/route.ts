@@ -54,7 +54,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const { id } = await request.json();
     if (!id) return NextResponse.json({ error: "유저 ID 필요" }, { status: 400 });
-    deleteUser(id);
+    await deleteUser(id);
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "삭제 오류";

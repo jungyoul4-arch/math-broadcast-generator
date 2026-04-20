@@ -90,3 +90,12 @@ lib/
 - 브랜치: `main` 단일 브랜치 운영
 - 테스트: 별도 테스트 프레임워크 없음 — `npm run dev`로 수동 확인
 - AI 프롬프트 수정 시: 기존 프롬프트의 금지 패턴/올바른 예시 유지, 추가만 허용
+
+## graphify
+
+This project has a graphify knowledge graph at graphify-out/.
+
+Rules:
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)

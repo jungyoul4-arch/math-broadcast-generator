@@ -6,6 +6,7 @@ import fs from "fs";
 import path from "path";
 import { getGroupByUserId } from "./groups";
 import { getUserById } from "./users";
+import { withFileLock, atomicWriteSync } from "./fs-utils";
 
 // ── 타입 ──────────────────────────────────────
 
@@ -60,6 +61,9 @@ export interface SaveProblemInput {
   contiPngBase64?: string;
   html: string;
   contiHtml?: string;
+  /** 도형 포함 여부 — 클라이언트가 analyze 결과를 기반으로 명시적으로 전달.
+   *  과거에는 html.includes("diagram")로 추정했으나 오탐(class명 "diagram-area" 등)이 있어 명시 필드로 분리. */
+  hasDiagram?: boolean;
 }
 
 export interface LibraryFilter {
@@ -108,7 +112,7 @@ function readIndex(userId: string): LibraryIndex {
 
 function writeIndex(userId: string, index: LibraryIndex) {
   ensureUserDirs(userId);
-  fs.writeFileSync(userIndexPath(userId), JSON.stringify(index, null, 2), "utf-8");
+  atomicWriteSync(userIndexPath(userId), JSON.stringify(index, null, 2));
 }
 
 // ── 자동 태그 생성 ────────────────────────────
@@ -160,7 +164,8 @@ function generateId(): string {
 // ── CRUD (유저별) ─────────────────────────────
 
 /** 문제 저장 (유저의 라이브러리에) */
-export function saveProblem(userId: string, input: SaveProblemInput): SavedProblem {
+export async function saveProblem(userId: string, input: SaveProblemInput): Promise<SavedProblem> {
+  return withFileLock(userIndexPath(userId), () => {
   const index = readIndex(userId);
   const id = generateId();
   const problemDir = path.join(userProblemsDir(userId), id);
@@ -195,7 +200,7 @@ export function saveProblem(userId: string, input: SaveProblemInput): SavedProbl
     difficulty: input.difficulty,
     points: input.points,
     source: input.source,
-    hasDiagram: input.html?.includes("diagram") || false,
+    hasDiagram: input.hasDiagram === true,
   });
   if (itemType === "lecture-note") autoTags.push("강의노트");
   const allTags = [...new Set([...autoTags, ...(input.tags || [])])];
@@ -225,15 +230,15 @@ export function saveProblem(userId: string, input: SaveProblemInput): SavedProbl
     footerText: input.footerText,
   };
 
-  fs.writeFileSync(
+  atomicWriteSync(
     path.join(problemDir, "meta.json"),
-    JSON.stringify(saved, null, 2),
-    "utf-8"
+    JSON.stringify(saved, null, 2)
   );
 
   index.problems.push(saved);
   writeIndex(userId, index);
   return saved;
+  });
 }
 
 // ── 복수 유저 라이브러리 합산 ─────────────────
@@ -399,40 +404,44 @@ export function getProblemFile(
 }
 
 /** 태그 수정 (본인 문제만) */
-export function updateProblemTags(
+export async function updateProblemTags(
   userId: string,
   problemId: string,
   tags: string[]
-): SavedProblem | null {
-  const index = readIndex(userId);
-  const problem = index.problems.find((p) => p.id === problemId);
-  if (!problem) return null;
+): Promise<SavedProblem | null> {
+  return withFileLock(userIndexPath(userId), () => {
+    const index = readIndex(userId);
+    const problem = index.problems.find((p) => p.id === problemId);
+    if (!problem) return null;
 
-  problem.tags = [...new Set(tags)];
-  const metaPath = path.join(userProblemsDir(userId), problemId, "meta.json");
-  if (fs.existsSync(metaPath)) {
-    const meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
-    meta.tags = problem.tags;
-    fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), "utf-8");
-  }
-  writeIndex(userId, index);
-  return problem;
+    problem.tags = [...new Set(tags)];
+    const metaPath = path.join(userProblemsDir(userId), problemId, "meta.json");
+    if (fs.existsSync(metaPath)) {
+      const meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
+      meta.tags = problem.tags;
+      atomicWriteSync(metaPath, JSON.stringify(meta, null, 2));
+    }
+    writeIndex(userId, index);
+    return problem;
+  });
 }
 
 /** 문제 삭제 (본인 문제만) */
-export function deleteProblem(userId: string, problemId: string): boolean {
-  const index = readIndex(userId);
-  const idx = index.problems.findIndex((p) => p.id === problemId);
-  if (idx === -1) return false;
+export async function deleteProblem(userId: string, problemId: string): Promise<boolean> {
+  return withFileLock(userIndexPath(userId), () => {
+    const index = readIndex(userId);
+    const idx = index.problems.findIndex((p) => p.id === problemId);
+    if (idx === -1) return false;
 
-  index.problems.splice(idx, 1);
-  writeIndex(userId, index);
+    index.problems.splice(idx, 1);
+    writeIndex(userId, index);
 
-  const problemDir = path.join(userProblemsDir(userId), problemId);
-  if (fs.existsSync(problemDir)) {
-    fs.rmSync(problemDir, { recursive: true, force: true });
-  }
-  return true;
+    const problemDir = path.join(userProblemsDir(userId), problemId);
+    if (fs.existsSync(problemDir)) {
+      fs.rmSync(problemDir, { recursive: true, force: true });
+    }
+    return true;
+  });
 }
 
 // ── 마이그레이션 (기존 data/library.json → admin 유저) ──

@@ -13,21 +13,47 @@ import katex from "katex";
 const DEBUG = process.env.MBG_DEBUG === "true";
 
 /**
- * $$ 블록 수식 내부의 백슬래시를 정규화
+ * 수식 블록 내부의 백슬래시를 정규화
+ *
+ * cases 환경 안에서는 `\\`(줄바꿈)이 의미를 갖기 때문에 외부와 다른 규칙 적용:
+ *   - 외부: 영문자 앞 2개+ → 1개, 비영문자 앞 3개+ → 2개 (공격적 축약)
+ *   - 내부: 4개+ → 1개, 3개+ → 2개, `\\(영문자)` → `\(영문자)` (줄바꿈 보존)
+ *
+ * 참고: claude.ts에서도 동일 함수를 import하여 재사용 (단일 소스).
  */
-function normalizeMathBlock(inner: string): string {
-  let fixed = inner;
-  // Step 1: 2개 이상 연속 백슬래시 + 영문자 → 1개 + 영문자 (명령어 정규화)
-  fixed = fixed.replace(/\\{2,}([a-zA-Z])/g, "\\$1");
-  // Step 2: 3개 이상 연속 백슬래시 + 비영문자/끝 → 2개 (줄바꿈 정규화)
-  fixed = fixed.replace(/\\{3,}(?=[^a-zA-Z]|$)/g, "\\\\");
-  // Step 3: cases 환경 안에서 손실된 줄바꿈 복원
-  // 단독 \ + 공백(줄바꿈이 1개로 줄어든 경우) → \\ (2개로 복원)
-  // (?<!\\) lookbehind로 이미 올바른 \\의 두 번째 \는 건너뜀
-  if (fixed.includes("begin{cases}")) {
-    fixed = fixed.replace(/(?<!\\)\\(?!\\)(?=\s)/g, "\\\\");
-  }
-  return fixed;
+export function normalizeMathBlock(inner: string): string {
+  // 1) cases 영역을 플레이스홀더로 추출 — 모든 이스케이프 수준(\begin ~ \\\\begin) 대응
+  const casesBlocks: string[] = [];
+  const withPlaceholder = inner.replace(
+    /\\+begin\{cases\}[\s\S]*?\\+end\{cases\}/g,
+    (match) => {
+      casesBlocks.push(match);
+      return `\x00CASES${casesBlocks.length - 1}\x00`;
+    }
+  );
+
+  // 2) cases 외부: 공격적 정규화 (줄바꿈 `\\` 없음 가정)
+  let outsideFixed = withPlaceholder;
+  outsideFixed = outsideFixed.replace(/\\{2,}([a-zA-Z])/g, "\\$1");
+  outsideFixed = outsideFixed.replace(/\\{3,}(?=[^a-zA-Z]|$)/g, "\\\\");
+
+  // 3) cases 내부: 줄바꿈 `\\` 보존
+  const casesFixed = casesBlocks.map((block) => {
+    let b = block;
+    // Gemini 과잉 이스케이프: 4+ 백슬래시 + 영문자 → 1개 (`\\\\frac` → `\frac`)
+    b = b.replace(/\\{4,}([a-zA-Z])/g, "\\$1");
+    // Gemini 과잉 이스케이프: 3+ 백슬래시 + 비영문자/끝 → 2개 (줄바꿈)
+    b = b.replace(/\\{3,}(?=[^a-zA-Z]|$)/g, "\\\\");
+    // 정확히 2개 + 영문자 → 1개 (double-escaped 명령어, `\\frac` → `\frac`)
+    //   `\\ `(공백)/`\\\n`/`\\` 끝 등 줄바꿈 시나리오는 영문자 lookahead로 제외됨
+    b = b.replace(/(?<!\\)\\\\(?=[a-zA-Z])/g, "\\");
+    // JSON 왕복 손실 복원: 단독 `\` + 공백 → `\\` (cases 줄바꿈 손실 복구)
+    b = b.replace(/(?<!\\)\\(?!\\)(?=\s)/g, "\\\\");
+    return b;
+  });
+
+  // 4) 플레이스홀더 복원
+  return outsideFixed.replace(/\x00CASES(\d+)\x00/g, (_, idx) => casesFixed[Number(idx)]);
 }
 
 /**

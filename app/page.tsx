@@ -28,6 +28,7 @@ interface ProblemState {
   previewImage?: string;
   pngBase64?: string;
   contiPngBase64?: string;
+  hasDiagram?: boolean;
 }
 
 type AppPhase = "upload" | "analyzing" | "preview" | "rendering" | "done";
@@ -159,6 +160,7 @@ export default function Home() {
             status: "ready",
             subject: "강의노트",
             contiHtml: data.contiHtml,
+            hasDiagram: data.hasDiagram === true,
           });
         } else {
           updateProblem(prob.id, {
@@ -169,6 +171,7 @@ export default function Home() {
             unitName: data.problemData.unitName || "",
             bodyHtml: data.problemData.bodyHtml || "",
             html: data.html,
+            hasDiagram: data.hasDiagram === true,
           });
         }
       } catch (error: unknown) {
@@ -338,6 +341,7 @@ export default function Home() {
         unitName: data.problemData.unitName || "",
         bodyHtml: data.problemData.bodyHtml || "",
         html: data.html,
+        hasDiagram: data.hasDiagram === true,
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "재생성 오류";
@@ -503,6 +507,7 @@ export default function Home() {
             contiPngBase64: prob.contiPngBase64,
             html: prob.html,
             contiHtml: prob.contiHtml,
+            hasDiagram: prob.hasDiagram === true,
           }),
         });
         if (res.ok) {
@@ -624,6 +629,7 @@ export default function Home() {
           <ProgressBar
             current={analyzeProgress}
             total={problems.length}
+            active={problems.filter((p) => p.status === "analyzing").length}
             label={uploadMode === "lecture-note" ? "강의노트 이미지 처리 중..." : "Claude API로 문제 분석 중..."}
           />
         </div>
@@ -635,6 +641,7 @@ export default function Home() {
           <ProgressBar
             current={renderProgress}
             total={problems.filter((p) => p.status === "rendering" || p.status === "done").length}
+            active={problems.filter((p) => p.status === "rendering").length}
             label="Playwright로 투명 PNG 렌더링 중..."
           />
         </div>
