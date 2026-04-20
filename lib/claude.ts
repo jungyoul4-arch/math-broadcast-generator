@@ -3,7 +3,7 @@
  * gemini-3.1-pro 사용
  */
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { generateProblemHtml, type ProblemData } from "./template";
+import { generateProblemHtml, type ProblemData, type ContentBlock } from "./template";
 import { renderTikzToPng } from "./tikz-renderer";
 import { normalizeMathBlock } from "./normalize";
 
@@ -57,9 +57,14 @@ const SYSTEM_PROMPT = `당신은 수학 문제 이미지를 분석하여 HTML+La
   "unitName": "수열의 극한",
   "hasDiagram": false,  // ★ 이미지에 도형·그래프·그림이 있으면 반드시 true로 설정 (누락 금지). 수식만 있으면 false.
   "diagramTikz": null,
-  "bodyHtml": "HTML+LaTeX 본문 (구하고자 하는 것 반드시 포함!)",
+  "contentBlocks": [  // ★ 원본 이미지를 위→아래로 읽으며 블록 순서 그대로 나열 (아래 "콘텐츠 순서 보존" 섹션 필독)
+    { "type": "text", "html": "문단 1 HTML+LaTeX" },
+    { "type": "condition", "html": "박스 안 내용" },
+    { "type": "text", "html": "문단 2 HTML+LaTeX (구하고자 하는 것 포함)" }
+  ],
+  "bodyHtml": null,      // contentBlocks 사용 시 반드시 null (레거시 전용)
   "questionHtml": null,
-  "conditionHtml": "박스 안의 조건부 (원본에 박스가 있는 경우만, 없으면 null)",
+  "conditionHtml": null, // contentBlocks 사용 시 반드시 null (레거시 전용)
   "choicesHtml": null
 }
 \`\`\`
@@ -264,12 +269,73 @@ hasDiagram: false, diagramTikz: null
 - 예: <br><br><span class="question-line">$p + q + h(4)$의 값은?</span>
 - questionHtml은 반드시 null! 구하고자 하는 것은 bodyHtml 끝에 넣으세요.
 - 원본에 "~의 값은?" 또는 "~를 구하시오"가 있으면 절대 빠뜨리지 마세요!
+- contentBlocks를 사용할 때는 **마지막 text 블록의 끝**에 구하고자 하는 것을 포함하세요.
 
-## 조건 박스 (conditionHtml)
+## 조건 박스 (conditionHtml) — 레거시 (contentBlocks가 이를 대체)
 - 원본 문제에서 박스(테두리) 안에 조건이 쓰여 있으면 → conditionHtml에 넣으세요
 - 박스가 없는 일반 조건이면 → bodyHtml에 포함
 - conditionHtml에 넣은 내용은 자동으로 박스 스타일로 렌더링됩니다
 - 예: "자연수 n에 대하여 직선 $y = ...$" 가 박스 안에 있으면 conditionHtml에 넣기
+
+## 콘텐츠 순서 보존 (★★ 최우선 규칙 — 박스 유무와 무관하게 항상 적용 ★★)
+
+원본 이미지를 **위에서 아래로 읽으면서** 만나는 모든 콘텐츠 블록을 순서대로 contentBlocks 배열에 담으세요.
+이 규칙이 적용되면 bodyHtml, conditionHtml, questionHtml은 모두 null로 설정합니다.
+(bodyHtml/conditionHtml 분리 방식은 "박스 중간" 케이스를 표현할 수 없어 폐지됩니다 — 반드시 contentBlocks를 사용하세요.)
+
+### 블록 타입
+- "text": 평문/수식이 섞인 일반 문단
+- "condition": 원본에 박스(테두리/사각형)로 감싸진 조건 영역
+
+### 블록 분할 기준
+1. 문단(빈 줄/들여쓰기)이 바뀌면 새 블록으로 나누세요.
+2. 박스가 나오면 그 박스를 condition 블록으로 분리하고, 박스 앞/뒤 문장은 별개의 text 블록으로 분리하세요.
+3. 박스가 여러 개면 각 박스마다 condition 블록을 만들고 그 사이 텍스트도 별개의 text 블록으로 두세요.
+4. 한 문단 내부의 줄바꿈은 <br> 태그로 표현하고 블록을 쪼개지 마세요.
+
+### 예시 A — 박스 없음
+이미지: "함수 $f(x)=x^2$에 대하여 $f(2)$의 값을 구하시오."
+→
+contentBlocks: [
+  { "type": "text", "html": "함수 $f(x)=x^2$에 대하여 $f(2)$의 값을 구하시오." }
+]
+
+### 예시 B — 박스가 맨 끝
+이미지: "다음 조건을 만족시키는 $a$의 값은? [박스: (가)…, (나)…]"
+→
+contentBlocks: [
+  { "type": "text", "html": "다음 조건을 만족시키는 $a$의 값은?" },
+  { "type": "condition", "html": "(가) … <br>(나) …" }
+]
+
+### 예시 C — 박스가 중간 (★ 주요 버그 케이스)
+이미지: "함수 $f(x)$가 다음 조건을 만족시킨다. [박스: (가)…, (나)…] 자연수 $n$에 대하여 $p_n=…$라 할 때, $g(x)=…$의 $\\alpha$를 구하시오."
+→
+contentBlocks: [
+  { "type": "text", "html": "함수 $f(x)$가 다음 조건을 만족시킨다." },
+  { "type": "condition", "html": "(가) … <br>(나) …" },
+  { "type": "text", "html": "자연수 $n$에 대하여 $p_n=…$라 할 때, $g(x)=…$의 $\\alpha$를 구하시오." }
+]
+
+### 예시 D — 박스 2개
+이미지: "조건 (A): [박스1] 조건 (B): [박스2] 위 조건을 만족시키는 … 값을 구하시오."
+→
+contentBlocks: [
+  { "type": "text", "html": "조건 (A):" },
+  { "type": "condition", "html": "박스1 내용" },
+  { "type": "text", "html": "조건 (B):" },
+  { "type": "condition", "html": "박스2 내용" },
+  { "type": "text", "html": "위 조건을 만족시키는 … 값을 구하시오." }
+]
+
+### 절대 규칙
+- contentBlocks를 채웠다면 bodyHtml, conditionHtml, questionHtml 모두 null.
+- 원본에 박스가 하나라도 있으면 반드시 contentBlocks 형식 사용 (bodyHtml/conditionHtml 분리 방식 금지).
+- 박스가 전혀 없어도 contentBlocks 사용 가능 — 문단 하나짜리여도 1개짜리 배열로 제출.
+- 구하고자 하는 것("~의 값은?", "~를 구하시오")은 항상 **마지막 text 블록**에 포함.
+- 블록 순서는 원본 이미지의 **세로 위치 순서** — 절대 재배치 금지.
+- **cases 환경(\\begin{cases}...\\end{cases})은 반드시 하나의 블록 내에서 완결하세요.** 여러 블록에 걸쳐 쪼개지 마세요 — 정규화기는 블록 단위로 작동합니다.
+- **단일 $...$ / $$...$$ 수식도 블록 경계로 쪼개지 마세요** (달러 기호 짝이 어긋나면 KaTeX 파싱 실패).
 
 ## 기타
 - bodyHtml에 문제 전체(본문 + 조건 + 구하고자 하는 것)를 빠짐없이 넣으세요
@@ -627,7 +693,13 @@ async function analyzeText(
   if (DEBUG) console.log("📋 [DEBUG] Gemini bodyHtml 원본:", JSON.stringify((parsed.bodyHtml as string) || "").slice(0, 500));
 
   // ★ 검증: 조건부 함수가 있는데 \begin{cases}가 누락되면 재시도
-  const allHtml = ((parsed.bodyHtml as string) || "") + ((parsed.conditionHtml as string) || "");
+  const blocksHtml = Array.isArray(parsed.contentBlocks)
+    ? (parsed.contentBlocks as Array<{ html?: string }>).map((b) => b?.html || "").join("")
+    : "";
+  const allHtml =
+    ((parsed.bodyHtml as string) || "") +
+    ((parsed.conditionHtml as string) || "") +
+    blocksHtml;
   // 다양한 변수(x,t,n,k 등)와 부등호 패턴 감지
   const conditionRegex = /\(\s*[a-zA-Z]\s*(?:[<>≤≥]|\\leq|\\geq|\\le|\\ge|\\leqslant|\\geqslant)/;
   // 중괄호 + 조건이 한 줄로 나열된 패턴 감지
@@ -777,6 +849,21 @@ export async function analyzeProblemImage(
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const p = parsed as any;
+
+  const normalizeHtml = (s: string) =>
+    fixPiecewiseFunctions(fixDoubleEscapedEnvironments(fixAnswerBoxInMath(fixMathOperators(s))));
+
+  const rawBlocks: unknown[] = Array.isArray(p.contentBlocks) ? p.contentBlocks : [];
+  const normalizedBlocks: ContentBlock[] = rawBlocks
+    .filter((b: unknown): b is { type: string; html: string } =>
+      !!b && typeof b === "object" && typeof (b as { html?: unknown }).html === "string"
+    )
+    .map((b: { type: string; html: string }) => ({
+      type: b.type === "condition" ? ("condition" as const) : ("text" as const),
+      html: normalizeHtml(b.html || ""),
+    }));
+  const hasBlocks = normalizedBlocks.length > 0;
+
   const problemData: ProblemData = {
     number: problemNumber ?? p.number ?? 1,
     subject: p.subject || "수학",
@@ -787,9 +874,12 @@ export async function analyzeProblemImage(
     source: source || undefined,
     headerText: headerText || undefined,
     footerText: footerText || undefined,
-    bodyHtml: fixPiecewiseFunctions(fixDoubleEscapedEnvironments(fixAnswerBoxInMath(fixMathOperators(p.bodyHtml || "")))),
+    bodyHtml: hasBlocks ? "" : normalizeHtml(p.bodyHtml || ""),
     questionHtml: "",
-    conditionHtml: p.conditionHtml ? fixPiecewiseFunctions(fixDoubleEscapedEnvironments(fixAnswerBoxInMath(fixMathOperators(p.conditionHtml)))) : undefined,
+    conditionHtml: hasBlocks
+      ? undefined
+      : (p.conditionHtml ? normalizeHtml(p.conditionHtml) : undefined),
+    contentBlocks: hasBlocks ? normalizedBlocks : undefined,
     hasDiagram: !!hasDiagram,
     diagramPngBase64,
     diagramLayout,

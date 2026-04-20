@@ -3,6 +3,10 @@
  * 도형은 TikZ PNG로 삽입 (하이브리드)
  */
 
+export type ContentBlock =
+  | { type: "text"; html: string }
+  | { type: "condition"; html: string };
+
 export interface ProblemData {
   number: number;
   subject: string;
@@ -13,9 +17,10 @@ export interface ProblemData {
   source?: string;
   headerText?: string;  // 머릿말 (예: "OO쌤의 적중문항")
   footerText?: string;  // 꼬릿말 (예: "문제분석을 해보세요")
-  bodyHtml: string;
+  bodyHtml: string;            // 레거시 — contentBlocks 없을 때만 렌더에 사용
   questionHtml: string;
-  conditionHtml?: string;
+  conditionHtml?: string;       // 레거시
+  contentBlocks?: ContentBlock[];  // 원본 이미지 위→아래 순서 보존
   hasDiagram?: boolean;
   diagramPngBase64?: string;
   diagramLayout?: "single" | "wide" | "multi";
@@ -41,6 +46,16 @@ export function generateProblemHtml(problem: ProblemData): string {
   const conditionBlock = problem.conditionHtml
     ? `<span class="condition">${problem.conditionHtml}</span>`
     : '';
+
+  const bodyRendered = problem.contentBlocks && problem.contentBlocks.length > 0
+    ? problem.contentBlocks
+        .map((b) =>
+          b.type === "condition"
+            ? `<span class="condition">${b.html}</span>`
+            : b.html
+        )
+        .join('\n')
+    : `${problem.bodyHtml}${conditionBlock}`;
 
   // 도형 레이아웃에 따른 CSS 클래스
   const layoutClass = problem.diagramLayout === "multi" ? "diagram-multi"
@@ -149,6 +164,7 @@ body {
 .condition {
   display: block;
   margin-top: 12px;
+  margin-bottom: 12px;
   padding: 16px 20px;
   font-size: 17px;
   color: rgba(255,255,255,0.85);
@@ -256,8 +272,7 @@ body {
 
   <div class="problem-box">
     <div class="problem-body">
-      ${problem.bodyHtml}
-      ${conditionBlock}
+      ${bodyRendered}
     </div>
     ${diagramBlock}
     ${choicesBlock}

@@ -36,6 +36,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "변환된 PNG가 필요합니다" }, { status: 400 });
     }
 
+    // 검색 인덱스 bodyHtml — contentBlocks가 있으면 그 html을 이어 붙여 텍스트 검색 인덱스로 사용.
+    // (렌더 source of truth는 body.html 문자열이며 bodyHtml은 검색/미리보기 용도.)
+    const searchIndexBody =
+      Array.isArray(body.contentBlocks) && body.contentBlocks.length > 0
+        ? body.contentBlocks
+            .map((b: { html?: string }) => (b && typeof b.html === "string" ? b.html : ""))
+            .join("\n")
+        : (body.bodyHtml || "");
+
     const saved = await saveProblem(session.userId, {
       itemType: body.itemType || "problem",
       linkedProblemNumber: body.linkedProblemNumber,
@@ -45,7 +54,7 @@ export async function POST(request: NextRequest) {
       points: body.points || 0,
       difficulty: body.difficulty || 0,
       source: body.source || "",
-      bodyHtml: body.bodyHtml || "",
+      bodyHtml: searchIndexBody,
       headerText: body.headerText,
       footerText: body.footerText,
       tags: body.tags || [],

@@ -22,6 +22,7 @@ interface ProblemState {
   headerText: string;
   footerText: string;
   bodyHtml: string;
+  contentBlocks?: Array<{ type: "text" | "condition"; html: string }>;
   html?: string;
   contiHtml?: string;
   originalThumb?: string;
@@ -170,6 +171,7 @@ export default function Home() {
             points: data.problemData.points,
             unitName: data.problemData.unitName || "",
             bodyHtml: data.problemData.bodyHtml || "",
+            contentBlocks: data.problemData.contentBlocks,
             html: data.html,
             hasDiagram: data.hasDiagram === true,
           });
@@ -340,6 +342,7 @@ export default function Home() {
         points: data.problemData.points,
         unitName: data.problemData.unitName || "",
         bodyHtml: data.problemData.bodyHtml || "",
+        contentBlocks: data.problemData.contentBlocks,
         html: data.html,
         hasDiagram: data.hasDiagram === true,
       });
@@ -499,6 +502,7 @@ export default function Home() {
             difficulty: 0,
             source: prob.source || globalSource,
             bodyHtml: prob.bodyHtml,
+            contentBlocks: prob.contentBlocks,
             headerText: prob.headerText,
             footerText: prob.footerText,
             tags,
