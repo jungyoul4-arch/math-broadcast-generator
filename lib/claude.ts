@@ -55,7 +55,7 @@ const SYSTEM_PROMPT = `당신은 수학 문제 이미지를 분석하여 HTML+La
   "points": 4,
   "difficulty": 4,
   "unitName": "수열의 극한",
-  "hasDiagram": false,
+  "hasDiagram": false,  // ★ 이미지에 도형·그래프·그림이 있으면 반드시 true로 설정 (누락 금지). 수식만 있으면 false.
   "diagramTikz": null,
   "bodyHtml": "HTML+LaTeX 본문 (구하고자 하는 것 반드시 포함!)",
   "questionHtml": null,
@@ -550,11 +550,26 @@ export async function detectDiagram(
 ): Promise<boolean> {
   const model = client.getGenerativeModel({
     model: "gemini-3-flash-preview",
-    systemInstruction: "이미지를 보고 도형, 그래프, 그림이 있는지만 판단하세요. 반드시 true 또는 false만 응답하세요.",
+    systemInstruction: [
+      "이미지에서 시각적 도형 요소의 존재 여부를 판정합니다.",
+      "",
+      "다음 중 하나라도 있으면 true:",
+      "- 좌표평면 / 함수 그래프 (축, 곡선, 점)",
+      "- 기하 도형 (삼각형, 사각형, 원, 원뿔, 구, 입체도형)",
+      "- 수직선 / 수형도 / 다이어그램 / 플로우차트",
+      "- 표, 격자, 행렬 그림",
+      "- 확률·통계 그림 (상자, 주사위, 히스토그램, 벤다이어그램)",
+      "- 화살표로 연결된 도식 / 점과 선의 연결 그림",
+      "- 문제 본문에 '그림과 같이', '아래 [그림]에서', '다음 도형' 등의 표현이 있는 경우",
+      "",
+      "수식(LaTeX)만 있고 위와 같은 시각적 요소가 전혀 없으면 false.",
+      "",
+      "반드시 소문자 true 또는 false 한 단어로만 응답하세요. 다른 문자·설명·구두점 금지.",
+    ].join("\n"),
   });
   const result = await model.generateContent([
     imageContent,
-    { text: "이 수학 문제에 도형, 그래프, 또는 그림이 있습니까? true/false만 답하세요." },
+    { text: "이 수학 문제에 위 기준의 시각 요소가 있습니까? true/false만 답하세요." },
   ]);
   const text = result.response.text()?.trim().toLowerCase() || "";
   return text.includes("true");
@@ -661,8 +676,22 @@ export async function generateTikz(
       "당신은 수학 문제의 도형을 TikZ 코드로 변환하는 전문가입니다.",
       "사용자가 수학 문제 이미지를 보내면, 도형/그래프 부분만 TikZ 코드로 생성합니다.",
       "",
-      "응답 형식: ```latex 코드블록 안에 \\begin{tikzpicture}...\\end{tikzpicture}만 넣으세요.",
-      "JSON으로 감싸지 마세요. 순수 TikZ 코드만 응답하세요.",
+      "## 응답 형식 (절대 규칙)",
+      "- 반드시 ```latex 로 시작하고 ``` 로 끝나는 **코드블록 하나**만 응답하세요.",
+      "- 코드블록은 \\begin{tikzpicture}로 시작하여 \\end{tikzpicture}로 끝나야 합니다.",
+      "- 코드블록 앞뒤에 설명·인사·주석·JSON·마크다운 헤더를 **절대 포함하지 마세요**.",
+      "- 도형 생성이 어렵거나 불명확하더라도 최소한의 빈 tikzpicture(\\begin{tikzpicture}\\end{tikzpicture})라도 반환하세요. 빈 응답·거부·설명문은 금지입니다.",
+      "",
+      "## 사용 가능한 TikZ 라이브러리 (이 목록 외 금지)",
+      "calc, arrows.meta, patterns, decorations.markings, positioning, intersections",
+      "(tikz-cd, pgfplots, chemfig, decorations.pathmorphing 등은 XeLaTeX 컴파일 실패를 유발하므로 절대 금지)",
+      "",
+      "## 단순화 지침 (컴파일 실패 방지)",
+      "- 코드는 50줄 이내로 유지하세요. 핵심 구조만 표현하고 불필요한 장식 최소화.",
+      "- \\foreach 반복은 20회 이내.",
+      "- 중첩된 scope/환경은 최소화.",
+      "- 한글 라벨은 나눔명조로 렌더되므로 일반 한글 음절만 사용(특수 유니코드·한자 금지).",
+      "- 수식 라벨은 $...$ 안에 일반 LaTeX 명령만 사용.",
       "",
       tikzRulesSection,
     ].join("\n"),
