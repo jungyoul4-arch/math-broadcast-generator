@@ -5,6 +5,7 @@ import { memo } from "react";
 type DiagramLayout = "single" | "wide" | "multi";
 
 interface ProblemCardProps {
+  id?: string;
   number: number;
   subject: string;
   unitName?: string;
@@ -18,10 +19,11 @@ interface ProblemCardProps {
   hasDiagram?: boolean;
   diagramLayout?: DiagramLayout;
   diagramLayoutEditable?: boolean;
-  onDiagramLayoutChange?: (layout: DiagramLayout) => void;
+  onDiagramLayoutChange?: (id: string, layout: DiagramLayout) => void;
 }
 
 export default memo(function ProblemCard({
+  id,
   number,
   subject,
   unitName,
@@ -233,7 +235,7 @@ export default memo(function ProblemCard({
         </div>
 
         {/* 도형 크기 프리셋 (도형 있는 카드 + preview 페이즈에서만) */}
-        {hasDiagram && diagramLayoutEditable && onDiagramLayoutChange && (
+        {hasDiagram && diagramLayoutEditable && onDiagramLayoutChange && id && (
           <div
             style={{
               display: "flex",
@@ -258,7 +260,7 @@ export default memo(function ProblemCard({
                 <button
                   key={key}
                   type="button"
-                  onClick={() => onDiagramLayoutChange(key)}
+                  onClick={() => onDiagramLayoutChange(id, key)}
                   style={{
                     padding: "3px 10px",
                     border: active

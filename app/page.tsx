@@ -691,6 +691,7 @@ export default function Home() {
           {problems.map((prob) => (
             <div key={prob.id} style={{ position: "relative" }}>
               <ProblemCard
+                id={prob.id}
                 number={prob.number}
                 subject={prob.subject || (prob.status === "pending" ? "대기" : "분석 중")}
                 unitName={prob.unitName}
@@ -704,7 +705,7 @@ export default function Home() {
                 hasDiagram={prob.hasDiagram}
                 diagramLayout={prob.diagramLayout}
                 diagramLayoutEditable={phase === "preview" && prob.status === "ready"}
-                onDiagramLayoutChange={(layout) => handleDiagramLayoutChange(prob.id, layout)}
+                onDiagramLayoutChange={handleDiagramLayoutChange}
               />
               {prob.itemType === "lecture-note" && (
                 <span style={{
