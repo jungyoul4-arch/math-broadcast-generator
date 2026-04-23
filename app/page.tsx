@@ -30,6 +30,7 @@ interface ProblemState {
   pngBase64?: string;
   contiPngBase64?: string;
   hasDiagram?: boolean;
+  diagramLayout?: "single" | "wide" | "multi";
 }
 
 type AppPhase = "upload" | "analyzing" | "preview" | "rendering" | "done";
@@ -162,6 +163,7 @@ export default function Home() {
             subject: "강의노트",
             contiHtml: data.contiHtml,
             hasDiagram: data.hasDiagram === true,
+            diagramLayout: data.diagramLayout,
           });
         } else {
           updateProblem(prob.id, {
@@ -174,6 +176,7 @@ export default function Home() {
             contentBlocks: data.problemData.contentBlocks,
             html: data.html,
             hasDiagram: data.hasDiagram === true,
+            diagramLayout: data.diagramLayout ?? data.problemData?.diagramLayout,
           });
         }
       } catch (error: unknown) {
@@ -345,12 +348,35 @@ export default function Home() {
         contentBlocks: data.problemData.contentBlocks,
         html: data.html,
         hasDiagram: data.hasDiagram === true,
+        diagramLayout: data.diagramLayout ?? data.problemData?.diagramLayout,
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "재생성 오류";
       updateProblem(prob.id, { status: "ready", errorMessage: message });
     }
   }, [updateProblem, globalSource]);
+
+  const handleDiagramLayoutChange = useCallback(
+    (id: string, layout: "single" | "wide" | "multi") => {
+      const swap = (s?: string) =>
+        s?.replace(
+          /(class="diagram-area\s+)diagram-(?:single|wide|multi)(")/g,
+          `$1diagram-${layout}$2`
+        );
+      setProblems((prev) =>
+        prev.map((p) => {
+          if (p.id !== id) return p;
+          return {
+            ...p,
+            diagramLayout: layout,
+            html: swap(p.html) ?? p.html,
+            contiHtml: swap(p.contiHtml) ?? p.contiHtml,
+          };
+        })
+      );
+    },
+    []
+  );
 
   // base64 → Blob 다운로드 헬퍼 (data: URL보다 안정적)
   const downloadBase64 = useCallback((base64: string, filename: string) => {
@@ -675,6 +701,10 @@ export default function Home() {
                 previewImage={prob.previewImage}
                 pngBase64={prob.pngBase64}
                 contiPngBase64={prob.contiPngBase64}
+                hasDiagram={prob.hasDiagram}
+                diagramLayout={prob.diagramLayout}
+                diagramLayoutEditable={phase === "preview" && prob.status === "ready"}
+                onDiagramLayoutChange={(layout) => handleDiagramLayoutChange(prob.id, layout)}
               />
               {prob.itemType === "lecture-note" && (
                 <span style={{

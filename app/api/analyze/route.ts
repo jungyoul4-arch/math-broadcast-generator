@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) {
         itemType: "lecture-note",
         contiHtml,
         hasDiagram: hasDiagramDetected,
+        diagramLayout,
       });
     }
 
@@ -107,6 +108,7 @@ export async function POST(request: NextRequest) {
       html: result.html,
       // problemData.hasDiagram 필드는 Gemini가 직접 판정
       hasDiagram: result.problemData?.hasDiagram === true,
+      diagramLayout: result.problemData?.diagramLayout,
     });
   } catch (error: unknown) {
     const message =

@@ -2,6 +2,8 @@
 
 import { memo } from "react";
 
+type DiagramLayout = "single" | "wide" | "multi";
+
 interface ProblemCardProps {
   number: number;
   subject: string;
@@ -13,6 +15,10 @@ interface ProblemCardProps {
   errorMessage?: string;
   pngBase64?: string;
   contiPngBase64?: string;
+  hasDiagram?: boolean;
+  diagramLayout?: DiagramLayout;
+  diagramLayoutEditable?: boolean;
+  onDiagramLayoutChange?: (layout: DiagramLayout) => void;
 }
 
 export default memo(function ProblemCard({
@@ -25,6 +31,10 @@ export default memo(function ProblemCard({
   previewImage,
   pngBase64,
   contiPngBase64,
+  hasDiagram,
+  diagramLayout,
+  diagramLayoutEditable,
+  onDiagramLayoutChange,
 }: ProblemCardProps) {
   const statusColors: Record<string, string> = {
     pending: "#9e9e9e",
@@ -221,6 +231,56 @@ export default memo(function ProblemCard({
             </span>
           )}
         </div>
+
+        {/* 도형 크기 프리셋 (도형 있는 카드 + preview 페이즈에서만) */}
+        {hasDiagram && diagramLayoutEditable && onDiagramLayoutChange && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              marginTop: "10px",
+              fontSize: "12px",
+            }}
+          >
+            <span style={{ color: "rgba(255,255,255,0.55)", marginRight: "2px" }}>
+              도형 크기
+            </span>
+            {(
+              [
+                { key: "single", label: "작게" },
+                { key: "wide", label: "보통" },
+                { key: "multi", label: "크게" },
+              ] as { key: DiagramLayout; label: string }[]
+            ).map(({ key, label }) => {
+              const active = (diagramLayout ?? "single") === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => onDiagramLayoutChange(key)}
+                  style={{
+                    padding: "3px 10px",
+                    border: active
+                      ? "1px solid rgba(100,181,246,0.8)"
+                      : "1px solid rgba(255,255,255,0.15)",
+                    borderRadius: "6px",
+                    background: active
+                      ? "rgba(100,181,246,0.18)"
+                      : "rgba(255,255,255,0.03)",
+                    color: active ? "#90caf9" : "rgba(255,255,255,0.7)",
+                    fontSize: "12px",
+                    fontWeight: active ? 700 : 500,
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
