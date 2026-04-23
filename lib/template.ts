@@ -178,13 +178,13 @@ body {
   text-align: center;
 }
 .diagram-single {
-  max-width: 55%;
+  max-width: 40%;
 }
 .diagram-wide {
-  max-width: 75%;
+  max-width: 70%;
 }
 .diagram-multi {
-  max-width: 90%;
+  max-width: 100%;
 }
 .diagram-img {
   max-width: 100%;

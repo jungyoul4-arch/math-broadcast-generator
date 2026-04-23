@@ -114,9 +114,9 @@ body {
 }
 
 .diagram-area { margin: 20px auto 16px; text-align: center; }
-.diagram-single { max-width: 55%; }
-.diagram-wide { max-width: 75%; }
-.diagram-multi { max-width: 90%; }
+.diagram-single { max-width: 40%; }
+.diagram-wide { max-width: 70%; }
+.diagram-multi { max-width: 100%; }
 .diagram-img { max-width: 100%; height: auto; }
 
 .katex, .katex * { color: #fff !important; }

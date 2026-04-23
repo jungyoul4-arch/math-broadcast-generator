@@ -378,6 +378,77 @@ export default function Home() {
     []
   );
 
+  // done 상태의 단일 문제 재랜더링 — 도형 크기 변경 후 사용
+  const handleRerenderSingle = useCallback(async (id: string) => {
+    const prob = problems.find((p) => p.id === id);
+    if (!prob) return;
+    if (!prob.html && !prob.contiHtml) return;
+
+    updateProblem(id, { status: "rendering", errorMessage: undefined });
+
+    try {
+      const items: Array<{ html: string; number: number; type: "problem" | "conti" }> = [];
+      if (prob.html) {
+        items.push({ html: prob.html, number: prob.number, type: "problem" });
+      }
+      if (prob.contiHtml) {
+        items.push({ html: prob.contiHtml, number: prob.number + 100000, type: "conti" });
+      }
+
+      const res = await fetch("/api/render", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "렌더링 실패");
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("스트림을 읽을 수 없습니다");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") continue;
+
+          try {
+            const result = JSON.parse(data);
+            if (result.error) throw new Error(result.error);
+
+            if (result.number >= 100000) {
+              updateProblem(id, { contiPngBase64: result.pngBase64 });
+            } else {
+              updateProblem(id, { pngBase64: result.pngBase64 });
+            }
+          } catch (e) {
+            if (e instanceof Error && e.message !== "렌더링 오류") {
+              console.warn("SSE 파싱 경고:", e);
+            }
+          }
+        }
+      }
+
+      updateProblem(id, { status: "done" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "재랜더링 오류";
+      updateProblem(id, { status: "done", errorMessage: message });
+    }
+  }, [problems, updateProblem]);
+
   // base64 → Blob 다운로드 헬퍼 (data: URL보다 안정적)
   const downloadBase64 = useCallback((base64: string, filename: string) => {
     const byteChars = atob(base64);
@@ -704,7 +775,10 @@ export default function Home() {
                 contiPngBase64={prob.contiPngBase64}
                 hasDiagram={prob.hasDiagram}
                 diagramLayout={prob.diagramLayout}
-                diagramLayoutEditable={phase === "preview" && prob.status === "ready"}
+                diagramLayoutEditable={
+                  (phase === "preview" && prob.status === "ready") ||
+                  (phase === "done" && prob.status === "done" && prob.hasDiagram === true)
+                }
                 onDiagramLayoutChange={handleDiagramLayoutChange}
               />
               {prob.itemType === "lecture-note" && (
@@ -918,6 +992,24 @@ export default function Home() {
                       }}
                     >
                       강의노트
+                    </button>
+                  )}
+                  {prob.hasDiagram && (
+                    <button
+                      onClick={() => handleRerenderSingle(prob.id)}
+                      style={{
+                        background: "rgba(38,198,218,0.7)",
+                        border: "1px solid rgba(38,198,218,0.5)",
+                        borderRadius: "8px",
+                        color: "#fff",
+                        padding: "4px 10px",
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        backdropFilter: "blur(4px)",
+                      }}
+                    >
+                      재랜더
                     </button>
                   )}
                   {prob.itemType !== "lecture-note" && (
