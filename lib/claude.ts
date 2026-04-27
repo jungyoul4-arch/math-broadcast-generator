@@ -50,11 +50,11 @@ const SYSTEM_PROMPT = `당신은 수학 문제 이미지를 분석하여 HTML+La
 \`\`\`json
 {
   "number": 1,
-  "subject": "미적분",
+  "subject": "수2",
   "type": "주관식",
   "points": 4,
   "difficulty": 4,
-  "unitName": "수열의 극한",
+  "unitName": "정적분으로 정의된 함수",
   "hasDiagram": false,  // ★ 이미지에 도형·그래프·그림이 있으면 반드시 true로 설정 (누락 금지). 수식만 있으면 false.
   "diagramTikz": null,
   "contentBlocks": [  // ★ 원본 이미지를 위→아래로 읽으며 블록 순서 그대로 나열 (아래 "콘텐츠 순서 보존" 섹션 필독)
@@ -249,15 +249,26 @@ hasDiagram: false, diagramTikz: null
 객관식 보기(①②③④⑤)가 문제에 있더라도 choicesHtml은 반드시 null로 설정하세요.
 방송에서는 보기 없이 문제 본문만 표시합니다. 절대 보기를 포함하지 마세요!
 
-## subject 분류
-- 2022 개정: 공통수학1, 공통수학2, 대수, 미적분1, 확률과통계, 미적분2, 기하
-- 2015 개정: 수학I, 수학II, 확률과통계, 미적분, 기하
+## subject 분류 (★ 절대 규칙)
+다음 5개 중 정확히 하나만 사용. 그 외 명칭(수학I, 수학II, 공통수학1, 공통수학2, 대수, 미적분1, 미적분2, 확률과통계 등)은 절대 금지.
+- 수1   : 2015 개정 수학I  — 지수와 로그, 지수·로그함수, 삼각함수, 수열
+- 수2   : 2015 개정 수학II — 함수의 극한과 연속, 미분(다항함수), 적분(다항함수)
+- 미적분: 2015 개정 미적분 — 수열의 극한, 미분법(여러 가지 함수/합성/매개), 적분법(여러 가지 함수), 급수
+- 확통  : 2015 개정 확률과통계 — 경우의 수, 확률, 통계
+- 기하  : 2015 개정 기하 — 이차곡선, 평면벡터, 공간도형과 공간좌표
 
-## unitName 분류
-수학I/수학II: "수열의 극한", "함수의 극한", "미분계수와 도함수", "도함수의 활용", "정적분의 활용"
-미적분: "여러 가지 함수의 미분", "여러 가지 적분법", "급수"
-확률과통계: "조건부확률", "확률분포", "통계적 추정"
-기하: "이차곡선", "평면벡터의 성분과 내적", "공간도형"
+## unitName → subject 매핑 (단원명을 보고 정확히 분류할 것)
+[수1]   지수와 로그, 거듭제곱근, 로그의 계산, 지수함수, 로그함수, 삼각함수, 사인법칙, 코사인법칙, 등차수열, 등비수열, 수열의 합, 수학적 귀납법
+[수2]   함수의 극한, 함수의 연속, 미분계수, 도함수, 접선의 방정식, 함수의 증가·감소, 극값, 변곡점, 속도와 가속도, 부정적분, 정적분, 정적분으로 정의된 함수, 넓이, 입체의 부피
+[미적분] 수열의 극한, 급수, 등비급수, 지수함수·로그함수의 미분, 삼각함수의 미분, 합성함수의 미분, 음함수, 매개변수, 역함수의 미분, 이계도함수, 치환적분, 부분적분, 정적분과 급수, 회전체의 부피
+[확통]   순열, 조합, 중복순열, 이항정리, 확률, 조건부확률, 독립사건, 확률변수, 이항분포, 정규분포, 표본평균, 신뢰구간
+[기하]   이차곡선, 포물선, 타원, 쌍곡선, 평면벡터, 벡터의 내적, 직선의 방정식, 평면의 방정식, 공간도형, 공간좌표, 구의 방정식
+
+## subject 결정 우선순위 (반드시 이 순서로 판단)
+1. 이미지 상단·머릿말에 "[수1]", "[수2]", "[미적분]", "[확통]", "[기하]" 약자가 인쇄되어 있으면 → 그 값을 그대로 subject로 사용 (가장 강한 신호, 다른 추론보다 우선)
+2. 위 1번이 없으면 unitName(단원명)을 보고 위 매핑표에 따라 결정
+3. "정적분"이 들어가는 단원: "정적분으로 정의된 함수"·"다항함수의 적분"은 수2, "치환적분"·"부분적분"은 미적분
+4. "수열의 극한"·"급수"는 미적분 (수1·수2 아님)
 
 ## 중요 (절대 지켜야 함!)
 - 수식 하나라도 틀리면 방송 사고입니다
@@ -607,6 +618,31 @@ export interface AnalysisResult {
   html: string;
 }
 
+const SUBJECT_CANONICAL = ["수1", "수2", "미적분", "확통", "기하"] as const;
+type CanonicalSubject = typeof SUBJECT_CANONICAL[number];
+
+const SUBJECT_ALIAS_MAP: Record<string, CanonicalSubject> = {
+  "수학I": "수1", "수학 I": "수1", "수학1": "수1", "수학i": "수1",
+  "수학II": "수2", "수학 II": "수2", "수학2": "수2", "수학ii": "수2",
+  "공통수학1": "수1", "공통수학 1": "수1", "공통수학I": "수1",
+  "공통수학2": "수2", "공통수학 2": "수2", "공통수학II": "수2",
+  "대수": "수1",
+  "미적분1": "수2", "미적분 1": "수2", "미적분I": "수2",
+  "미적분2": "미적분", "미적분 2": "미적분", "미적분II": "미적분",
+  "확률과통계": "확통", "확률과 통계": "확통", "확률통계": "확통",
+};
+
+export function normalizeSubject(raw: string | undefined, headerText?: string): string {
+  if (headerText) {
+    const m = headerText.match(/\[\s*(수1|수2|미적분|확통|기하)\s*\]/);
+    if (m) return m[1];
+  }
+  if (!raw) return "수1";
+  const s = raw.trim();
+  if ((SUBJECT_CANONICAL as readonly string[]).includes(s)) return s;
+  return SUBJECT_ALIAS_MAP[s] ?? s;
+}
+
 /**
  * Step 0: Flash로 도형 유무만 빠르게 판별 (0.5~1초)
  */
@@ -866,7 +902,7 @@ export async function analyzeProblemImage(
 
   const problemData: ProblemData = {
     number: problemNumber ?? p.number ?? 1,
-    subject: p.subject || "수학",
+    subject: normalizeSubject(p.subject as string | undefined, headerText),
     type: p.type || "주관식",
     points: p.points || 4,
     difficulty: p.difficulty || 3,
