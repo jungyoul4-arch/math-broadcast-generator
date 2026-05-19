@@ -63,13 +63,15 @@ export default function Home() {
     async (files: File[]) => {
       const sorted = files.sort((a, b) => a.name.localeCompare(b.name));
 
-      // 원본 썸네일 생성
+      // 원본 썸네일 생성 — 손상/0바이트 파일이 섞여도 hang 안 되게 onerror/onabort도 resolve
       const thumbs = await Promise.all(
         sorted.map(
           (file) =>
             new Promise<string>((resolve) => {
               const reader = new FileReader();
               reader.onload = () => resolve(reader.result as string);
+              reader.onerror = () => resolve("");
+              reader.onabort = () => resolve("");
               reader.readAsDataURL(file);
             })
         )
@@ -78,7 +80,7 @@ export default function Home() {
       setProblems((prev) => {
         const startNumber = prev.length + 1;
         const newProblems: ProblemState[] = sorted.map((file, i) => ({
-          id: `${Date.now()}-${i}`,
+          id: crypto.randomUUID(),
           file,
           number: startNumber + i,
           status: "pending" as const,
@@ -125,8 +127,6 @@ export default function Home() {
     });
     setPhase("analyzing");
     setAnalyzeProgress(0);
-
-    let completed = 0;
 
     const analyzeSingle = async (prob: (typeof pendingProblems)[0]) => {
       try {
@@ -187,8 +187,7 @@ export default function Home() {
           errorMessage: message,
         });
       } finally {
-        completed++;
-        setAnalyzeProgress(completed);
+        setAnalyzeProgress((prev) => prev + 1);
       }
     };
 
@@ -298,9 +297,15 @@ export default function Home() {
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : "렌더링 오류";
-      readyProblems.forEach((p) => {
-        updateProblem(p.id, { status: "error", errorMessage: message });
-      });
+      // 이미 done 상태(SSE로 PNG가 도착해 완료된 카드)는 보존하고, 아직 rendering 중인 카드만 error로 전환
+      const renderingIds = new Set(readyProblems.map((p) => p.id));
+      setProblems((prev) =>
+        prev.map((p) =>
+          renderingIds.has(p.id) && p.status !== "done"
+            ? { ...p, status: "error" as const, errorMessage: message }
+            : p
+        )
+      );
       setPhase("preview");
     }
   }, [problems, updateProblem]);

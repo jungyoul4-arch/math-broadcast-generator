@@ -35,6 +35,35 @@ export function getClient(): InstanceType<typeof GoogleGenerativeAI> {
   return _geminiClient;
 }
 
+// ─── 일시적 실패(429/503/네트워크) 재시도 헬퍼 ───
+// 10개 동시 분석 시 Gemini TPM 한도/일시 장애에서 한 카드만 fail 하는 간헐적 증상을 방어
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts: { retries?: number; baseDelay?: number; tag?: string } = {}
+): Promise<T> {
+  const { retries = 3, baseDelay = 1000, tag = "gemini" } = opts;
+  let lastErr: unknown;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      const isRetriable =
+        /429|503|500|RESOURCE_EXHAUSTED|UNAVAILABLE|DEADLINE_EXCEEDED|ECONNRESET|ETIMEDOUT|fetch failed|socket hang up/i.test(
+          msg
+        );
+      if (!isRetriable || i === retries) throw err;
+      const delay = baseDelay * Math.pow(2, i) + Math.random() * 500;
+      console.warn(
+        `[${tag}] retry ${i + 1}/${retries} after ${Math.round(delay)}ms — ${msg.slice(0, 120)}`
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
+}
+
 const SYSTEM_PROMPT = `당신은 수학 문제 이미지를 분석하여 HTML+LaTeX 코드로 변환하는 전문가입니다.
 
 ## 작업
@@ -669,10 +698,14 @@ export async function detectDiagram(
       "반드시 소문자 true 또는 false 한 단어로만 응답하세요. 다른 문자·설명·구두점 금지.",
     ].join("\n"),
   });
-  const result = await model.generateContent([
-    imageContent,
-    { text: "이 수학 문제에 위 기준의 시각 요소가 있습니까? true/false만 답하세요." },
-  ]);
+  const result = await withRetry(
+    () =>
+      model.generateContent([
+        imageContent,
+        { text: "이 수학 문제에 위 기준의 시각 요소가 있습니까? true/false만 답하세요." },
+      ]),
+    { tag: "detectDiagram" }
+  );
   const text = result.response.text()?.trim().toLowerCase() || "";
   return text.includes("true");
 }
@@ -691,7 +724,10 @@ async function analyzeText(
     model: modelName,
     systemInstruction: SYSTEM_PROMPT,
   });
-  const result = await model.generateContent([imageContent, { text: userMessage }]);
+  const result = await withRetry(
+    () => model.generateContent([imageContent, { text: userMessage }]),
+    { tag: `analyzeText(${tier})` }
+  );
   const responseText = result.response.text();
   if (!responseText) throw new Error(`Gemini ${tier} 응답 없음`);
 
@@ -805,10 +841,14 @@ export async function generateTikz(
     ].join("\n"),
   });
 
-  const result = await model.generateContent([
-    imageContent,
-    { text: "이 수학 문제의 도형/그래프를 TikZ 코드로 생성해주세요. ```latex 코드블록으로 응답하세요." },
-  ]);
+  const result = await withRetry(
+    () =>
+      model.generateContent([
+        imageContent,
+        { text: "이 수학 문제의 도형/그래프를 TikZ 코드로 생성해주세요. ```latex 코드블록으로 응답하세요." },
+      ]),
+    { tag: `generateTikz(${tier})` }
+  );
   const text = result.response.text();
   if (!text) return null;
 
@@ -1047,10 +1087,14 @@ export async function extractTextFromImage(
     inlineData: { mimeType: mediaType, data: base64 },
   };
 
-  const result = await model.generateContent([
-    imageContent,
-    { text: "이 이미지에서 모든 텍스트와 수식을 추출하여 HTML+LaTeX로 변환해주세요." },
-  ]);
+  const result = await withRetry(
+    () =>
+      model.generateContent([
+        imageContent,
+        { text: "이 이미지에서 모든 텍스트와 수식을 추출하여 HTML+LaTeX로 변환해주세요." },
+      ]),
+    { tag: "extractTextFromImage" }
+  );
 
   const responseText = result.response.text();
   if (!responseText) throw new Error("Gemini 응답 없음");

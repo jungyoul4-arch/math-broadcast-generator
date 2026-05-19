@@ -3,7 +3,7 @@ import { analyzeProblemImage, extractTextFromImage, getClient, detectDiagram, ge
 import { renderTikzToPng } from "@/lib/tikz-renderer";
 import { generateLectureNoteHtml } from "@/lib/image-template";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   try {
